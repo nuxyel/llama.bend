@@ -79,9 +79,10 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
   run-time positions; pass the expression in an erased argument (`-s`) and the arrays once. A lemma
   quantified over a single-constructor value (`g: G`) can match it, which avoids computing the call that
   produced it.
-- `Array` is a plain ADT (`ALeaf`/`ANode`): matching an owned array hands out its halves in O(1) and is
-  safe; `Array.clone` is O(n); `Array.fork`/`Array.join` are `@unsafe`. Indexes wrap around, so never write
-  past a capacity.
+- `Array` is a binary tree in Base (`ALeaf`/`ANode`) but one flat block in the compiled program: `get`/`set` are
+  an index mask and a load or store (no descent), while matching an array copies each half into its own block
+  (BendRT, "Arrays"), so never walk an array by `match`; `Array.clone` is O(n); `Array.fork`/`Array.join` are
+  `@unsafe`. Indexes wrap around, so never write past a capacity. Corrected 2026-10-13 (bend-ml NOTES).
 - `File.read_at` returns a `List<U32>` with one cell per byte; producing and walking it is the cost of
   loading (bend-ml exp. 13), and erasing a large unread list costs more than walking it.
 - An `import ... as M` does not re-export, so a publishable package is one file. Relative imports
