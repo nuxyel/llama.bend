@@ -16,3 +16,10 @@ build/
 __pycache__/
 *.pyc
 *.bin
+
+# docs/media: the media scripts are .mjs too; node modules, review frames and the video are not committed
+!docs/media/**/*.mjs
+docs/media/node_modules/
+docs/media/frames/
+docs/media/.tmp-shot.html
+docs/media/llama.bend.mp4

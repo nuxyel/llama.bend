@@ -1,0 +1,13 @@
+ok   'Wait — the café costs €5 😀 and' (32 ids, 86.2 s): ids same, text same, chosen logits within 8.2e-07
+ok   'The capital of France is' (32 ids, 80.6 s): ids same, text same, chosen logits within 8.9e-07
+ok   'Machine learning is' (32 ids, 80.8 s): ids same, text same, chosen logits within 9.1e-07
+ok   '1, 2, 3, 4,' (32 ids, 82.0 s): ids same, text same, chosen logits within 8.4e-07
+ok   'def fibonacci(n):' (32 ids, 78.1 s): ids same, text same, chosen logits within 1.1e-06
+ok   'Once upon a time' (32 ids, 83.1 s): ids same, text same, chosen logits within 1.0e-06
+ok   'The quick brown fox jumps over the lazy dog. The' (32 ids, 85.0 s): ids same, text same, chosen logits within 9.7e-07
+ok   'Q: What is 2 + 2?\nA:' (32 ids, 84.6 s): ids same, text same, chosen logits within 9.8e-07
+ok   'Paris is the capital of' (32 ids, 78.0 s): ids same, text same, chosen logits within 9.5e-07
+ok   'In 1969, humans first' (32 ids, 88.5 s): ids same, text same, chosen logits within 1.1e-06
+ok   'import numpy as np\n\n' (32 ids, 87.7 s): ids same, text same, chosen logits within 1.0e-06
+ok   'Copyright 2024. All rights reserved.' (1 ids, 77.1 s): ids same, text same, chosen logits within 6.8e-08
+FAILURES: 0

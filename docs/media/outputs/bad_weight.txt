@@ -1,0 +1,19 @@
+SOME PROOFS FAIL
+Error:
+- expected : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<576n, 576n>
+- observed : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<192n, 576n>
+Context:
+- ln1  : List<&2, F32>
+- q    : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<576n, 576n>
+- k    : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<192n, 576n>
+- v    : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<192n, 576n>
+- o    : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<576n, 576n>
+- ln2  : List<&2, F32>
+- gate : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<1536n, 576n>
+- up   : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<1536n, 576n>
+- down : 0x373e5f0e1b2ccdc5e9e1fe2004c1644c/main.Bands<576n, 1536n>
+Location: swap
+7 |     case M.LW{ln1, q, k, v, o, ln2, gate, up, down}:
+8>|       M.LW{ln1, k, q, v, o, ln2, gate, up, down}
+  |                 ^
+9 | def main() -> Nat:

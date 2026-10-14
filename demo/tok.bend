@@ -435,6 +435,147 @@ def encode_words(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, ws: List<&2, 
 def encode_text(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, +bs: List<&2, U32>) -> List<&2, Nat>:
   encode_words(table, perm, pretok(tag_all(U.non_letters(), bs)))
 
+# ---- decoding: SmolLM2 ids back to UTF-8 text ----
+# ids 0-16 are special tokens: they are left out, as `tokenizers`' decode(skip_special_tokens = True) does;
+# ids 17-251 are bytes (the byte whose perm entry is the id); id 252 + k is merge k. Bytes that do not form
+# valid UTF-8 become U+FFFD, the replacement character Python's decode(errors = "replace") gives.
+
+def index_of(perm: List<&2, Nat>, +id: Nat, +i: Nat) -> Nat:
+  match perm:
+    case Nil{}:
+      0n
+    case Con{+p, t}:
+      sel(Nat.is_eq(p, id), i, index_of(t, id, 1n+i))
+
+def tk_sel(b: Bool, x: BPE.Tk, y: BPE.Tk) -> BPE.Tk:
+  match b:
+    case True{}:
+      x
+    case False{}:
+      y
+
+def tk_of_gid(+perm: List<&2, Nat>, +id: Nat) -> BPE.Tk:
+  tk_sel(Nat.is_lt(id, 252n), BPE.B{index_of(perm, id, 0n)}, BPE.M{Nat.sub(id, 252n)})
+
+def tks_sel(special: Bool, +perm: List<&2, Nat>, +id: Nat, rest: List<&2, BPE.Tk>) -> List<&2, BPE.Tk>:
+  match special:
+    case True{}:
+      rest
+    case False{}:
+      tk_of_gid(perm, id) <> rest
+
+def tks_of(+perm: List<&2, Nat>, ids: List<&2, Nat>) -> List<&2, BPE.Tk>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case Con{+h, t}:
+      tks_sel(Nat.is_lt(h, 17n), perm, h, tks_of(perm, t))
+
+def u32s(xs: List<&2, Nat>) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{n, t}:
+      U32.from_nat(n) <> u32s(t)
+
+def head_b(xs: List<&2, U32>) -> U32:
+  match xs:
+    case Nil{}:
+      0
+    case Con{c, t}:
+      c
+
+def tail1(xs: List<&2, U32>) -> List<&2, U32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{c, t}:
+      t
+
+def selu(b: Bool, x: U32, y: U32) -> U32:
+  match b:
+    case True{}:
+      x
+    case False{}:
+      y
+
+def is_cont_b(+b: U32) -> Bool:
+  Bool.and(U32.is_le(128, b), U32.is_le(b, 191))
+
+# the length of a UTF-8 sequence from its first byte; 1 for a byte that cannot start one (a continuation byte,
+# 0xC0, 0xC1, 0xF5-0xFF)
+def ulen(+b: U32) -> Nat:
+  sel(U32.is_lt(b, 194), 1n, sel(U32.is_lt(b, 224), 2n, sel(U32.is_lt(b, 240), 3n, sel(U32.is_lt(b, 245), 4n, 1n))))
+
+# the range of the second byte after a first byte b0 (Unicode table 3-7: no overlong forms, no surrogates,
+# nothing above U+10FFFF); the bytes after it are always 0x80-0xBF
+def lo2(+b0: U32) -> U32:
+  selu(U32.is_eq(b0, 224), 160, selu(U32.is_eq(b0, 240), 144, 128))
+
+def hi2(+b0: U32) -> U32:
+  selu(U32.is_eq(b0, 237), 159, selu(U32.is_eq(b0, 244), 143, 191))
+
+# how many of the (at most n) bytes after the first are valid continuation bytes, in a row
+def conts(n: Nat, t: List<&2, U32>) -> Nat:
+  match n t:
+    case 1n+p Con{+c, r}:
+      sel(is_cont_b(c), 1n+conts(p, r), 0n)
+    case _ _:
+      0n
+
+def conts2(n: Nat, +lo: U32, +hi: U32, t: List<&2, U32>) -> Nat:
+  match n t:
+    case 1n+p Con{+c, r}:
+      sel(in_range(c, lo, hi), 1n+conts(p, r), 0n)
+    case _ _:
+      0n
+
+def dec_cp(+b0: U32, +b1: U32, +b2: U32, +b3: U32, n: Nat) -> U32:
+  match n:
+    case 1n:
+      selu(U32.is_lt(b0, 128), b0, 65533)
+    case 2n:
+      (U32.sub(b0, 192) * 64 + U32.sub(b1, 128) : U32)
+    case 3n:
+      (U32.sub(b0, 224) * 4096 + U32.sub(b1, 128) * 64 + U32.sub(b2, 128) : U32)
+    case _:
+      (U32.sub(b0, 240) * 262144 + U32.sub(b1, 128) * 4096 + U32.sub(b2, 128) * 64 + U32.sub(b3, 128) : U32)
+
+# the next character and the bytes after it
+type Next is Data:
+  NDone{}
+  NChar{c: Char, rest: List<&2, U32>}
+
+# a complete sequence of n bytes is one character; an incomplete one (k < n - 1 continuation bytes) is one
+# U+FFFD for its first 1 + k bytes, as Rust's String::from_utf8_lossy (the decoder of `tokenizers`) does
+def nchar(ok: Bool, +b0: U32, +t: List<&2, U32>, +n: Nat, +k: Nat) -> Next:
+  match ok:
+    case True{}:
+      NChar{Chr{dec_cp(b0, head_b(t), head_b(tail1(t)), head_b(tail1(tail1(t))), n)}, List.drop(&2, U32, t, k)}
+    case False{}:
+      NChar{Chr{65533}, List.drop(&2, U32, t, k)}
+
+def next_char(bs: List<&2, U32>) -> Next:
+  match bs:
+    case Nil{}:
+      NDone{}
+    case Con{+b0, +t}:
+      nchar(Nat.is_eq(conts2(Nat.sub(ulen(b0), 1n), lo2(b0), hi2(b0), t), Nat.sub(ulen(b0), 1n)), b0, t, ulen(b0), conts2(Nat.sub(ulen(b0), 1n), lo2(b0), hi2(b0), t))
+
+# fuel: one character per byte at most
+def utf8_chars(fuel: Nat, nx: Next) -> List<&2, Char>:
+  match fuel nx:
+    case 1n+p NChar{c, r}:
+      c <> utf8_chars(p, next_char(r))
+    case _ _:
+      Nil{}
+
+def decode_bytes(+bs: List<&2, U32>) -> String:
+  String.from_list(utf8_chars(List.length(&2, U32, bs), next_char(bs)))
+
+def decode_text(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, ids: List<&2, Nat>) -> String:
+  decode_bytes(u32s(BPE.decode(table, tks_of(perm, ids))))
+
 # ---- test CLI: ids of the text in a file ----
 
 def show_nats(xs: List<&2, Nat>) -> String:
@@ -461,12 +602,32 @@ def run3(a: String, b: String, c: String) -> IO(Unit):
     tx : List<&2, U32> <- read_bytes(c)
     go(m, pm, tx)
 
+def dec_ok(ok: Bool, +ns: List<&2, Nat>, +pm: List<&2, U32>, ids: List<&2, U32>) -> IO(Unit):
+  match ok:
+    case True{}:
+      IO.print(decode_text(rules.go(ns, 0n), nums(pm), nums(ids)))
+    case False{}:
+      IO.print("invalid merges table")
+
+def dec_go(+m: List<&2, U32>, +pm: List<&2, U32>, ids: List<&2, U32>) -> IO(Unit):
+  dec_ok(ids_ok(nums(m), 0n), nums(m), pm, ids)
+
+# the text of the ids (decimal, separated by spaces) in a file
+def run_dec(a: String, b: String, c: String) -> IO(Unit):
+  do IO<Unit>:
+    m : List<&2, U32> <- read_bytes(a)
+    pm : List<&2, U32> <- read_bytes(b)
+    ids : List<&2, U32> <- read_bytes(c)
+    dec_go(m, pm, ids)
+
 def dispatch(args: List<String>) -> IO(Unit):
   match args:
     case Con{prog, Con{a, Con{b, Con{c, Nil{}}}}}:
       run3(a, b, c)
+    case Con{prog, Con{a, Con{b, Con{d, Con{c, Nil{}}}}}}:
+      run_dec(a, b, c)
     case _:
-      IO.print("usage: tok.bend merges_num.txt perm.txt text")
+      IO.print("usage: tok.bend merges_num.txt perm.txt text, or tok.bend merges_num.txt perm.txt --decode ids")
 
 def main() -> IO(Unit):
   do IO<Unit>:

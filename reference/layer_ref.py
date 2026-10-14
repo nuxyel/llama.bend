@@ -1,16 +1,17 @@
-"""Expected values for one SmolLM2 layer (milestone 3), from `transformers` in F32 with eager attention.
+"""Expected values for one layer (milestone 3), from `transformers` in F32 with eager attention, for the model
+MODEL (models.py).
 
   reference/.venv/bin/python reference/layer_ref.py
 
-Writes to data/test/, as little-endian F32 arrays of T rows:
-  <case>_in.bin                   the input of the layer (T x 576)
+Writes to data/<MODEL>/test/, as little-endian F32 arrays of T rows (widths for SmolLM2-135M: hidden 576, keys 192):
+  <case>_in.bin                   the input of the layer (T x hidden)
   <case>_<name>.bin               every intermediate, from forward hooks on the layer:
-    n1    input_layernorm output (576)        q, k, v   projections before RoPE (576, 192, 192)
-    qr, kr  q and k after RoPE, from transformers' own apply_rotary_pos_emb (576, 192)
-    attn  o_proj input (576)                  a         o_proj output (576)
-    n2    post_attention_layernorm (576)      m         mlp output (576)
-    y     the layer output (576)
-  inv_freq.bin                    rotary_emb.inv_freq (32)
+    n1    input_layernorm output (hidden)     q, k, v   projections before RoPE (hidden, keys, keys)
+    qr, kr  q and k after RoPE, from transformers' own apply_rotary_pos_emb (hidden, keys)
+    attn  o_proj input (hidden)               a         o_proj output (hidden)
+    n2    post_attention_layernorm (hidden)   m         mlp output (hidden)
+    y     the layer output (hidden)
+  inv_freq.bin                    rotary_emb.inv_freq (head size / 2)
 Cases: A_L0 and A_L15 (the real hidden states of a prompt entering layers 0 and 15), B_L0 (40 positions of
 Gaussian noise at the embedding scale, seed 0, entering layer 0).
 """
@@ -18,9 +19,8 @@ import os
 import numpy as np
 import torch
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HF = os.path.join(ROOT, "data", "hf")
-OUT = os.path.join(ROOT, "data", "test")
+from models import HF, T_DIR as OUT, sizes
+
 PROMPT = "The capital of France is the city of"
 
 
@@ -48,12 +48,13 @@ def capture(model, layer, embeds, case):
         h.remove()
     from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
     t = embeds.shape[1]
+    hidden, heads, kv, hd = sizes()[:4]
     cos, sin = model.model.rotary_emb(embeds, torch.arange(t)[None, :])
-    q4 = got["q"].reshape(1, t, 9, 64).transpose(1, 2)
-    k4 = got["k"].reshape(1, t, 3, 64).transpose(1, 2)
+    q4 = got["q"].reshape(1, t, heads, hd).transpose(1, 2)
+    k4 = got["k"].reshape(1, t, kv, hd).transpose(1, 2)
     qr, kr = apply_rotary_pos_emb(q4, k4, cos, sin)
-    got["qr"] = qr.transpose(1, 2).reshape(1, t, 576)
-    got["kr"] = kr.transpose(1, 2).reshape(1, t, 192)
+    got["qr"] = qr.transpose(1, 2).reshape(1, t, heads * hd)
+    got["kr"] = kr.transpose(1, 2).reshape(1, t, kv * hd)
     got["in"] = hs[layer]
     got["y"] = hs[layer + 1]
     for name, t in got.items():
@@ -72,7 +73,7 @@ def main():
     capture(model, 0, emb, "A_L0")
     capture(model, 15, emb, "A_L15")
     g = torch.Generator().manual_seed(0)
-    noise = torch.randn(1, 40, 576, generator=g) * emb.std()
+    noise = torch.randn(1, 40, sizes()[0], generator=g) * emb.std()
     capture(model, 0, noise, "B_L0")
     model.model.rotary_emb.inv_freq.float().numpy().astype("<f4").tofile(os.path.join(OUT, "inv_freq.bin"))
     print("ids", ids.tolist()[0])

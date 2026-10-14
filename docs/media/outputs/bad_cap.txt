@@ -1,0 +1,13 @@
+SOME PROOFS FAIL
+Error:
+- expected : True{}
+- observed : False{}
+Context:
+- kv : M.KV<2n, 2n>
+- ks : List<&2, List<&2, F32>>
+- vs : List<&2, List<&2, F32>>
+Location: third
+5 | def third(kv: M.KV<2n, 2n>, ks: List<&2, List<&2, F32>>, vs: List<&2, List<&2, F32>>) -> M.KV<2n, 3n>:
+6>|   M.KV.push(M.smollm2_135m(), 2n, 2n, kv, {==}, ks, vs)
+  |                                           ^^^^
+7 | def main() -> Nat:

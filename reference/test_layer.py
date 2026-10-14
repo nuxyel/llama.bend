@@ -1,30 +1,36 @@
-"""One SmolLM2 layer in Bend (demo/layer_test.bend) against transformers (reference/layer_ref.py).
+"""One layer in Bend (demo/layer_test.bend) against transformers (reference/layer_ref.py), for the model MODEL.
 
   reference/.venv/bin/python reference/test_layer.py <compiled layer_test>
 
 The Bend program prints `name t b0 b1 ...` (the exact F32 bits of an intermediate at position t) and
-`inv_freq b0 ... b31`. For every intermediate and position: max|bend - ref| / max|ref| must be <= 1e-5.
+`inv_freq b0 ... b31`. For every intermediate and position: max|bend - ref| / max|ref| must be <= TOL.
+
+TOL is 1e-5 for SmolLM2-135M (milestone 3) and grows with the square root of the longest product, max(hidden,
+MLP width) / 1536: the products sum their terms in a fixed sequential order (bend-ml-tensor-array's kernel), whose
+rounding error grows like sqrt(n), while PyTorch's blocked sums err less. Against a float64 run of the same layer,
+the remaining difference is Bend's, in the products (NOTES, 2026-10-10).
 """
 import os, subprocess, sys, time
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-T_DIR = os.path.join(ROOT, "data", "test")
+from models import D, T_DIR, config, sizes
+
 EXE = sys.argv[1]
-TOL = 1e-5
 CASES = [("A_L0", 0), ("A_L15", 15), ("B_L0", 0)]
-WIDTH = {"k": 192, "v": 192, "kr": 192}
+HIDDEN, _, KV, HD = sizes()[:4]
+TOL = 1e-5 * max(1.0, max(HIDDEN, config()["intermediate_size"]) / 1536) ** 0.5
+WIDTH = {"k": KV * HD, "v": KV * HD, "kr": KV * HD}
 ORDER = ["n1", "q", "k", "v", "qr", "kr", "attn", "a", "n2", "m", "y"]
 
 
 def ref(case, name):
-    return np.fromfile(os.path.join(T_DIR, f"{case}_{name}.bin"), "<f4").reshape(-1, WIDTH.get(name, 576))
+    return np.fromfile(os.path.join(T_DIR, f"{case}_{name}.bin"), "<f4").reshape(-1, WIDTH.get(name, HIDDEN))
 
 
 def run(case, layer):
     t_in = ref(case, "in").shape[0]
     t0 = time.time()
-    r = subprocess.run([EXE, str(layer), os.path.join(T_DIR, f"{case}_in.bin"), str(t_in)], capture_output=True, text=True)
+    r = subprocess.run([EXE, D, str(layer), os.path.join(T_DIR, f"{case}_in.bin"), str(t_in)], capture_output=True, text=True)
     dt = time.time() - t0
     rows, inv = {}, None
     for line in r.stdout.splitlines():
@@ -45,7 +51,7 @@ def main():
     want_inv = np.fromfile(os.path.join(T_DIR, "inv_freq.bin"), "<f4")
     for case, layer in CASES:
         rows, inv, dt, t_in = run(case, layer)
-        print(f"== {case} (layer {layer}, {t_in} positions, {dt:.1f} s)")
+        print(f"== {case} (layer {layer}, {t_in} positions, {dt:.1f} s, tolerance {TOL:.2e})")
         if inv is not None:
             same = np.array_equal(inv.view(np.uint32), want_inv.view(np.uint32))
             diff = int((inv.view(np.uint32) != want_inv.view(np.uint32)).sum())

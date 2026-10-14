@@ -1,0 +1,381 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>llama.bend launch video</title>
+<link rel="stylesheet" href="../theme.css">
+<style>
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  #grain { position: absolute; inset: 0; pointer-events: none; opacity: .05; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .3  0 0 0 0 .28  0 0 0 0 .25  0 0 0 1 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
+  #vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 58%, rgba(77,74,68,.13) 100%); }
+  .cell { position: absolute; left: 0; top: 0; overflow: hidden; }
+  .cell .h { position: absolute; inset: 0; background: repeating-linear-gradient(-45deg, #e2dcd1 0 5px, #efebe4 5px 11px); }
+  .t { position: absolute; white-space: pre; color: var(--b01); }
+  .w { display: inline-block; white-space: pre; }
+  .slot { position: absolute; left: 0; top: 0; border: 2px dashed #cfc8bb; border-radius: 9px; }
+  .tick { position: absolute; color: var(--bg); font-weight: 700; text-align: center; }
+  .cur { position: absolute; background: var(--vio); }
+  .u { border-bottom: 4px solid transparent; }
+</style>
+<div id="stage"><div id="world"></div><div id="vig"></div><div id="grain"></div></div>
+<script type="module">
+import { colorize, esc } from "../term.js";
+
+const DURATION = 60;
+const W = document.getElementById("world");
+// every number and every line of text below comes from numbers.json (the benchmark) or outputs/ (real runs,
+// scripts/capture_outputs.sh)
+const N = await (await fetch("../numbers.json")).json();
+const read = async (f) => (await (await fetch("../outputs/" + f)).text()).replace(/\n+$/, "").split("\n");
+const OUT = { weight: await read("bad_weight.txt"), cap: await read("bad_cap.txt"), gen: await read("gen_17b.txt"), test: await read("test_gen_17b.txt"),
+  verdict: (await read("verdict.txt"))[0], laws: +(await read("law_count.txt"))[0], pieces: await (await fetch("../outputs/gen_17b_pieces.json")).json() };
+await document.fonts.load('700 20px "Bend ML Mono"'); await document.fonts.load('400 20px "Bend ML Mono"');
+
+// ---------------- math ----------------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, k) => a + (b - a) * k;
+const E = {
+  smooth: (p) => p * p * (3 - 2 * p),
+  out: (p) => 1 - Math.pow(1 - p, 3),
+  expo: (p) => (p <= 0 ? 0 : p >= 1 ? 1 : p < 0.5 ? Math.pow(2, 20 * p - 10) / 2 : (2 - Math.pow(2, -20 * p + 10)) / 2),
+  // a damped spring that settles at 1 (small overshoot, no oscillation after ~0.7)
+  spring: (p) => (p >= 1 ? 1 : 1 - Math.exp(-6.5 * p) * (Math.cos(8 * p) + (6.5 / 8) * Math.sin(8 * p))),
+};
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mixc = (a, b, k) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], k))).join(",")})`; };
+const P = { bg: "#f2eee7", bg2: "#e9e4db", b1: "#a9a59d", b00: "#87847d", b01: "#69665f", b02: "#4d4a44", vio: "#8b83b5", grn: "#7e9a5e", red: "#c46a60", ora: "#c4845c",
+  g1: "#bdb6a8", g2: "#cdc7bc", chip: "#ddd8e7" };
+
+// ---------------- DOM helpers ----------------
+const el = (tag, cls, css = {}, parent = W) => { const d = document.createElement(tag); if (cls) d.className = cls; Object.assign(d.style, css); parent.appendChild(d); return d; };
+// text at world (x, y); anchor "l" | "c" | "r"
+function text(x, y, html, size, color = P.b01, anchor = "l", weight = 400) {
+  const d = el("div", "t", { left: x + "px", top: y + "px", fontSize: size + "px", color, fontWeight: weight });
+  d.innerHTML = html; d.dataset.anchor = anchor; return d;
+}
+const anchorX = { l: "0%", c: "-50%", r: "-100%" };
+function show(d, p, dy = 18) {
+  d.style.opacity = p;
+  d.style.transform = `translate(${anchorX[d.dataset.anchor || "l"]}, ${(1 - E.out(p)) * dy}px)`;
+}
+// kinetic line: tokens [[text, color, weight]] revealed word by word
+function kinetic(x, y, tokens, size, anchor = "c") {
+  const d = el("div", "t", { left: x + "px", top: y + "px", fontSize: size + "px" }); d.dataset.anchor = anchor;
+  const spans = [];
+  for (const [s, color = P.b02, weight = 700] of tokens) for (const w of s.split(/(?<= )/)) {
+    const sp = el("span", "w", { color, fontWeight: weight }, d); sp.textContent = w; spans.push(sp);
+  }
+  d.style.transform = `translateX(${anchorX[anchor]})`;
+  return { d, spans };
+}
+function drawKinetic(k, t, t0, step = 0.09, out = 1e9) {
+  const o = 1 - seg(t, out, out + 0.5);
+  k.spans.forEach((s, i) => { const p = E.out(seg(t, t0 + i * step, t0 + i * step + 0.45)); s.style.opacity = p * o; s.style.transform = `translateY(${(1 - p) * 22}px)`; });
+}
+// Bend-style block: muted "$ cmd" label and a flat panel whose lines are revealed by time
+function block(x, y, w, cmd, size = 22) {
+  const wrap = el("div", "", { position: "absolute", left: x + "px", top: y + "px", width: w + "px", opacity: 0 });
+  const lbl = el("div", "lbl", { fontSize: size * 0.72 + "px" }, wrap); lbl.innerHTML = `<span class="p">$</span> ` + esc(cmd);
+  const body = el("div", "blk", { fontSize: size + "px" }, wrap);
+  return { wrap, body };
+}
+const typed = (s, t, t0, cps) => s.slice(0, clamp(Math.floor((t - t0) * cps), 0, s.length));
+
+// ---------------- camera ----------------
+// keyframes: [time the move starts, duration, x, y, scale]
+const CAM = [
+  [0, 0, 0, 0, 1.06],
+  [0.2, 6.6, 0, 0, 1.12],          // slow push-in on the hook
+  [6.9, 1.7, 0, 1300, 1.0],         // to the title
+  [12.0, 1.6, 2400, 1300, 1.0],     // reshape
+  [21.0, 1.6, 2400, 2600, 1.0],     // proofs
+  [31.0, 1.6, 4800, 2600, 1.0],     // GPT-2
+  [44.0, 1.6, 4800, 3900, 1.0],     // benchmark
+  [54.0, 1.9, 2390, 1950, 0.22],    // pull back over the whole film
+  [56.3, 1.9, 0, 1340, 1.0],        // settle on the end card
+];
+function camera(t) {
+  let [, , x, y, s] = CAM[0];
+  for (let i = 1; i < CAM.length; i++) {
+    const [t0, d, x1, y1, s1] = CAM[i];
+    if (t < t0) break;
+    const e = i === 1 ? E.smooth(seg(t, t0, t0 + d)) : E.expo(seg(t, t0, t0 + d));
+    // zoom in log space so scale changes feel uniform
+    x = lerp(x, x1, e); y = lerp(y, y1, e); s = Math.exp(lerp(Math.log(s), Math.log(s1), e));
+  }
+  W.style.transform = `translate(960px,540px) scale(${s}) translate(${-x}px,${-y}px)`;
+}
+
+// ---------------- persistent cells ----------------
+// each cell has keyframes {t, d, ease, x, y, w, h, r, c (colour), o (opacity), hz (hatch 0..1)}
+const cells = Array.from({ length: 26 }, () => { const d = el("div", "cell"); const h = el("div", "h", { opacity: 0 }, d); return { d, h, keys: [] }; });
+const KEYS = ["x", "y", "w", "h", "r", "o", "hz"];
+function key(i, t, d, st, ease = "spring") { cells[i].keys.push({ t, d, ease, ...st }); }
+function drawCell(cl, t) {
+  const keys = [...cl.keys].sort((a, b) => a.t - b.t);
+  const cur = { ...keys[0] };
+  let color = keys[0].c;
+  for (let j = 1; j < keys.length; j++) {
+    const k = keys[j]; if (t < k.t) break;
+    const p = seg(t, k.t, k.t + k.d), e = E[k.ease](p), ec = E.smooth(p);
+    const prev = { ...cur };
+    for (const f of KEYS) if (k[f] !== undefined) cur[f] = lerp(prev[f], k[f], f === "o" || f === "hz" ? ec : e);
+    if (k.c) { color = p >= 1 ? k.c : mixc(cur.c, k.c, ec); if (p >= 1) cur.c = k.c; }
+  }
+  const s = cl.d.style;
+  s.transform = `translate(${cur.x - cur.w / 2}px, ${cur.y - cur.h / 2}px)`;
+  s.width = Math.max(0, cur.w) + "px"; s.height = Math.max(0, cur.h) + "px"; s.borderRadius = cur.r + "px";
+  s.background = color; s.opacity = cur.o; cl.h.style.opacity = cur.hz || 0;
+}
+
+// ================= SHOT 1: the hook (0 - 7 s), world centre (0, 0) =================
+// LW<SmolLM2-135M>: q is 576 x 576 (three bands of three cells here), k is 192 x 576 (one band). Swap them.
+const S1 = { step: 76, sz: 64, A: { x: -560, y: -220 }, B: { x: -120, y: -220 } };
+const qPos = (i, o = S1.A) => [o.x + (i % 3) * S1.step + S1.sz / 2, o.y + Math.floor(i / 3) * S1.step + S1.sz / 2];
+const kPos = (j, o = S1.B) => [o.x + j * S1.step + S1.sz / 2, o.y + S1.sz / 2];
+const qSlots = Array.from({ length: 9 }, (_, i) => { const [x, y] = qPos(i); return el("div", "slot", { width: S1.sz + "px", height: S1.sz + "px", opacity: 0, transform: `translate(${x - S1.sz / 2}px, ${y - S1.sz / 2}px)` }); });
+const kSlots = Array.from({ length: 3 }, (_, j) => { const [x, y] = kPos(j); return el("div", "slot", { width: S1.sz + "px", height: S1.sz + "px", opacity: 0, transform: `translate(${x - S1.sz / 2}px, ${y - S1.sz / 2}px)` }); });
+for (let i = 0; i < 26; i++) {
+  if (i < 9) {
+    const [x, y] = qPos(i), [sx, sy] = qPos(i, S1.B);
+    key(i, -1, 0, { x, y: y + 30, w: 0, h: 0, r: 12, c: P.g1, o: 0, hz: 0 });
+    key(i, 0.4 + i * 0.05, 0.9, { y, w: S1.sz, h: S1.sz, o: 1 });
+    key(i, 2.3 + (i % 3) * 0.04, 0.7, { x: sx, y: sy }, "out");                     // q moves into k's place...
+    if (i >= 3) key(i, 3.0, 0.5, { c: P.red }, "smooth");                           // ...and two of its bands have no room
+  } else if (i < 12) {
+    const j = i - 9, [x, y] = kPos(j), [sx, sy] = kPos(j, S1.A);
+    key(i, -1, 0, { x, y: y + 30, w: 0, h: 0, r: 12, c: P.g2, o: 0, hz: 0 });
+    key(i, 0.75 + j * 0.05, 0.9, { y, w: S1.sz, h: S1.sz, o: 1 });
+    key(i, 2.3 + j * 0.04, 0.7, { x: sx, y: sy }, "out");                           // k moves into q's place
+  } else key(i, -1, 0, { x: 0, y: 0, w: 0, h: 0, r: 12, c: P.g2, o: 0, hz: 0 });
+}
+const hdr = text(S1.A.x, -400, `LW&lt;SmolLM2-135M&gt;`, 46, P.b02, "l", 700);
+const qLbl = text(S1.A.x, S1.A.y - 56, `q · <span id="qd">576</span> × 576`, 28, P.b00);
+const kLbl = text(S1.B.x, S1.B.y - 56, `k · <span id="kd">192</span> × 576`, 28, P.b00);
+const qd = document.getElementById("qd"), kd = document.getElementById("kd");
+const swapLbl = text(S1.B.x + 3 * S1.step + 30, S1.A.y + 10, "swap them", 28, P.b1);
+const err1 = block(-820, 60, 1640, "bend tests/bad_weight.bend", 20);
+const hookLine = kinetic(0, 290, [["this does "], ["not compile.", P.red]], 62);
+const hookNote = text(0, 385, "each weight has its shape in its type, computed from the model's config", 24, P.b00, "c");
+function shot1(t) {
+  show(hdr, seg(t, 0.15, 0.7));
+  show(qLbl, seg(t, 0.9, 1.4)); show(kLbl, seg(t, 1.1, 1.6));
+  show(swapLbl, seg(t, 1.6, 1.9) * (1 - seg(t, 2.3, 2.5)));
+  qSlots.forEach((s, i) => { s.style.opacity = seg(t, 0.3, 0.6); s.style.borderColor = mixc("#cfc8bb", P.red, i >= 3 ? seg(t, 3.0, 3.3) : 0); });
+  kSlots.forEach((s) => { s.style.opacity = seg(t, 0.3, 0.6); });
+  const jam = seg(t, 3.0, 3.3);
+  for (const s of [qd, kd]) s.style.color = mixc(P.b00, P.red, jam);
+  show(err1.wrap, seg(t, 3.1, 3.5));
+  const ls = OUT.weight.slice(0, 4), n = Math.floor(clamp((t - 3.3) / 0.22, 0, ls.length));
+  err1.body.innerHTML = ls.slice(0, n).map((l, i) => (i >= 2 ? `<span class="mark">${colorize(l)}</span>` : colorize(l))).join("\n") || " ";
+  drawKinetic(hookLine, t, 4.4, 0.12);
+  show(hookNote, seg(t, 5.1, 5.6));
+}
+
+// ================= SHOT 2: title (7 - 12 s) and end card (54 - 60 s), (0, 1300) =================
+const TT = { x: 0, y: 1300 };
+const G = { sz: 40, step: 50 };
+const gPos = (k) => [TT.x - G.step + (k % 3) * G.step, TT.y - 230 + Math.floor(k / 3) * G.step];
+for (let i = 0; i < 26; i++) {
+  if (i < 9) { const [x, y] = gPos(i); key(i, 7.2 + i * 0.05, 1.3, { x, y, w: G.sz, h: G.sz, r: 8, c: i === 5 ? P.vio : P.g2, o: 1 }); }
+  else key(i, 7.0, 0.6, { w: 0, h: 0, o: 0 }, "smooth");
+}
+const word = text(TT.x - 50, TT.y - 120, "llama.bend", 168, P.b02, "c", 700);
+word.style.letterSpacing = "-3px";
+const cursor1 = el("div", "cur", { left: TT.x + 450 + "px", top: TT.y - 92 + "px", width: "84px", height: "150px", opacity: 0 });
+const sub = text(TT.x, TT.y + 110, "Llama models in Bend 2", 44, P.b00, "c");
+const tag = text(TT.x, TT.y + 180, "shapes in the types · laws checked by the kernel · the same tokens as PyTorch", 28, P.b1, "c");
+const endUrl = text(TT.x, TT.y + 108, "github.com/nuxyel/llama.bend", 46, P.vio, "c", 700);
+const endFacts = text(TT.x, TT.y + 182, `SmolLM2 135M · 360M · 1.7B · ${OUT.laws} laws · MIT`, 30, P.b00, "c");
+const endChecks = text(TT.x, TT.y + 262, "", 24, P.b00, "c");
+const endLine = el("div", "", { position: "absolute", left: TT.x - 300 + "px", top: TT.y + 318 + "px", width: "600px", height: "4px", background: "#e2dcd1", opacity: 0 });
+const endFill = el("div", "", { position: "absolute", left: 0, top: 0, height: "4px", background: P.grn }, endLine);
+const nGen = OUT.test.filter((l) => l.startsWith("ok ")).length;
+const blink = (t) => (Math.floor(t / 0.55) % 2 === 0 ? 1 : 0);
+function shot2(t) {
+  show(word, seg(t, 7.9, 8.6), 30);
+  cursor1.style.opacity = seg(t, 8.4, 8.6) * (t < 9 ? 1 : blink(t));
+  const out = 1 - seg(t, 54.6, 55.4);
+  show(sub, seg(t, 8.9, 9.5) * out); show(tag, seg(t, 9.4, 10.0) * out);
+  show(endUrl, seg(t, 57.6, 58.2)); show(endFacts, seg(t, 58.0, 58.6));
+  const k = Math.round(nGen * E.out(seg(t, 58.3, 59.4)));
+  endChecks.innerHTML = `the 1.7B against transformers · <b style="color:var(--grn)">${k}/${nGen}</b> generations identical`;
+  show(endChecks, seg(t, 58.2, 58.5));
+  endLine.style.opacity = seg(t, 58.2, 58.5); endFill.style.width = (k / nGen) * 600 + "px";
+}
+
+// ================= SHOT 3: the cache's room (12 - 21 s), (2400, 1300) =================
+const RZ = { x: 2400, y: 1300 }, cz = 120, cstep = 150, c0 = RZ.x - 640;
+const cSlotX = (p) => c0 + p * cstep + cz / 2, cY = RZ.y - 120;
+const cSlots = [0, 1].map((p) => el("div", "slot", { width: cz + "px", height: cz + "px", opacity: 0, transform: `translate(${cSlotX(p) - cz / 2}px, ${cY - cz / 2}px)` }));
+const wall = el("div", "", { position: "absolute", left: c0 + 2 * cstep - 22 + "px", top: cY - cz / 2 - 30 + "px", width: "6px", height: cz + 60 + "px", background: P.b02, opacity: 0, borderRadius: "3px" });
+const pushAt = [13.6, 14.6, 15.8];
+for (let p = 0; p < 3; p++) {
+  const i = p;
+  key(i, 12.0, 0.8, { x: c0 - 260, y: cY, w: cz * 0.86, h: cz * 0.86, r: 14, c: p < 2 ? P.vio : P.g1, o: 0 }, "smooth");
+  key(i, pushAt[p] - 0.8, 0.5, { o: 1 }, "smooth");
+  if (p < 2) key(i, pushAt[p], 0.9, { x: cSlotX(p) });
+  else { key(i, pushAt[p], 0.45, { x: cSlotX(2) - 40 }, "out"); key(i, pushAt[p] + 0.45, 0.9, { x: cSlotX(2) + 10, c: P.red }); }
+}
+const cHdr = text(c0, RZ.y - 330, "a key/value cache made for 2 positions", 30, P.b02, "l", 700);
+const cType = text(c0, RZ.y - 280, "", 28, P.vio, "l", 700);
+const cPos = [0, 1, 2].map((p) => text(cSlotX(p), cY + cz / 2 + 22, `t = ${p}`, 22, P.b1, "c"));
+const err2 = block(RZ.x + 40, RZ.y - 230, 820, "bend tests/bad_cap.bend", 21);
+const capLoc = OUT.cap.findIndex((l) => l.startsWith("Location:"));
+const cBad = kinetic(RZ.x, RZ.y + 240, [["2 < 2 has no proof: ", P.red], ["no write.", P.b02]], 54);
+const cNote = text(RZ.x, RZ.y + 330, "every write asks for a proof that its position is below the capacity", 26, P.b00, "c");
+function shot3(t) {
+  show(cHdr, seg(t, 12.4, 12.9));
+  const n = t < pushAt[0] + 0.5 ? 0 : t < pushAt[1] + 0.5 ? 1 : 2;
+  cType.textContent = `KV<2, ${n}>`; show(cType, seg(t, 12.8, 13.2));
+  cSlots.forEach((s) => { s.style.opacity = seg(t, 12.6, 13.0); });
+  wall.style.opacity = seg(t, 12.6, 13.0);
+  cPos.forEach((d, p) => show(d, seg(t, pushAt[p] - 0.3, pushAt[p])));
+  show(err2.wrap, seg(t, 16.3, 16.7));
+  const ls = [OUT.cap[1], OUT.cap[2], OUT.cap[3], OUT.cap[capLoc + 2], OUT.cap[capLoc + 3]], k = Math.floor(clamp((t - 16.5) / 0.22, 0, ls.length));
+  err2.body.innerHTML = ls.slice(0, k).map((l, i) => (i === 1 || i === 2 ? `<span class="mark">${colorize(l)}</span>` : colorize(l))).join("\n") || " ";
+  drawKinetic(cBad, t, 17.4, 0.12);
+  show(cNote, seg(t, 18.4, 18.9));
+}
+
+// ================= SHOT 4: the laws (21 - 31 s), (2400, 2600) =================
+const PF = { x: 2400, y: 2600 };
+const LAWS = [["gqa_head", "query head j·g + i reads key/value head j"], ["causal", "at position t, exactly t + 1 keys"],
+  ["kv_room", "a write below the capacity stays inside"], ["head_split", "a head splits in RoPE's halves and back"],
+  ["layout", "the typed weights cover each checkpoint"]];
+const pRow = (i) => PF.y - 280 + i * 92;
+for (let i = 0; i < 26; i++) {
+  if (i < 5) key(i, 21.1 + i * 0.06, 1.6, { x: PF.x - 900, y: pRow(i) + 22, w: 40, h: 40, r: 9, c: P.g2, o: 1, hz: 0 });
+  else if (i < 12) key(i, 21.0, 0.6, { w: 0, h: 0, o: 0 }, "smooth");
+}
+for (let i = 0; i < 5; i++) key(i, 26.9 + i * 0.22, 0.4, { c: P.grn }, "smooth");
+const pNames = LAWS.map(([nm], i) => text(PF.x - 855, pRow(i) - 8, nm, 32, P.b02, "l", 700));
+const pDesc = LAWS.map(([, d], i) => text(PF.x - 855, pRow(i) + 34, d, 21, P.b00));
+const pTicks = LAWS.map((_, i) => { const d = el("div", "tick", { left: PF.x - 920 + "px", top: pRow(i) + 2 + "px", width: "40px", fontSize: "28px", opacity: 0 }); d.textContent = "✓"; return d; });
+const pTotal = text(PF.x - 900, PF.y + 220, "", 40, P.b02, "l", 700);
+const lawLbl = text(PF.x + 420, PF.y - 260, "law gqa_head · grouped-query attention", 24, P.b1, "c");
+const lawTxt = text(PF.x + 420, PF.y - 190, "", 52, P.vio, "c", 700);
+const lawFor = text(PF.x + 420, PF.y - 110, "for every head j, every group size g and every i < g", 24, P.b00, "c");
+const verdict = text(PF.x + 420, PF.y + 40, OUT.verdict, 54, P.grn, "c", 700);
+const verdictNote = text(PF.x + 420, PF.y + 120, "bend --verdict: checked again by a Lean-proved kernel", 24, P.b00, "c");
+function shot4(t) {
+  pNames.forEach((d, i) => show(d, seg(t, 22.2 + i * 0.12, 22.7 + i * 0.12)));
+  pDesc.forEach((d, i) => show(d, seg(t, 22.5 + i * 0.12, 23.0 + i * 0.12)));
+  pTicks.forEach((d, i) => { d.style.opacity = seg(t, 27.1 + i * 0.22, 27.3 + i * 0.22); });
+  const tot = Math.round(OUT.laws * E.out(seg(t, 24.0, 25.2)));
+  pTotal.innerHTML = `<span style="color:var(--grn)">${tot}</span> laws, <span style="color:var(--grn)">0</span> @unsafe`;
+  show(pTotal, seg(t, 24.0, 24.4));
+  show(lawLbl, seg(t, 24.4, 24.9));
+  lawTxt.textContent = typed("(j·g + i) / g == j", t, 24.8, 14);
+  show(lawTxt, seg(t, 24.8, 25.0));
+  show(lawFor, seg(t, 26.3, 26.8));
+  show(verdict, seg(t, 27.0, 27.5), 24);
+  show(verdictNote, seg(t, 27.6, 28.1));
+}
+
+// ================= SHOT 5: SmolLM2-1.7B generating (31 - 44 s), (4800, 2600) =================
+const GP = { x: 4800, y: 2600 }, fs5 = 44, cw5 = fs5 * 0.6, left5 = GP.x - 780, COLS = 54, LINES = 4;
+const toks = OUT.gen.filter((l) => /^\s*id \d+/.test(l)).map((l) => { const mm = l.match(/id (\d+).*t=([\d.]+)s/); return { id: mm[1], t: +mm[2] }; });
+const prompt = "The capital of France is";
+// lay the real pieces out in monospace: a newline starts a line, a piece that does not fit wraps; stop at LINES lines
+const lay = []; { let col = prompt.length, line = 0;
+  for (const p of OUT.pieces) {
+    if (/^\n+$/.test(p)) { lay.push({ col, s: "", line, nl: true }); line += p.length; col = 0; if (line >= LINES) break; continue; }
+    if (col + p.length > COLS) { line++; col = 0; }
+    if (line >= LINES) break;
+    const s = col === 0 ? p.trimStart() : p; lay.push({ col, s, line }); col += s.length;
+  } }
+const shown = lay.length;
+const lineY = (l) => GP.y - 170 + l * 92;
+const loadS = (OUT.gen[0].match(/([\d.]+)s/) || [, "?"])[1];
+const gCmd = text(left5, GP.y - 400, `<span class="v">$</span> ./gen data/smollm2-1.7b "The capital of France is" 32`, 24, P.b1);
+const gLoad = text(left5, GP.y - 330, `loading 1.7 B weights: ${loadS} s, cut from this video`, 22, P.b1);
+const gPrompt = text(left5, lineY(0), "", fs5, P.b02, "l", 700);
+const gToks = lay.map((p) => text(left5 + p.col * cw5, lineY(p.line), esc(p.s), fs5, P.vio, "l", 700));
+let chip = 0;
+lay.forEach((p, i) => {
+  if (p.nl || chip >= 26) return;
+  key(chip, 31.1 + chip * 0.04, 1.7, { x: left5 + (p.col + p.s.length / 2) * cw5, y: lineY(p.line) + 29, w: p.s.length * cw5 + 12, h: 62, r: 8, c: P.chip, o: 0, hz: 0 });
+  key(chip, 35.6 + toks[i].t - toks[0].t - 0.05, 0.35, { o: 1 }, "smooth");
+  chip++;
+});
+for (let i = chip; i < 26; i++) key(i, 31.0, 0.5, { w: 0, h: 0, o: 0 }, "smooth");
+const gClock = text(left5 + 1560, GP.y - 330, "", 26, P.ora, "r", 700);
+const testLine = OUT.test.find((l) => l.includes(`'${prompt}'`)) || "";
+const within = (testLine.match(/within ([\d.e+-]+)/) || [, "?"])[1];
+const nIds = (testLine.match(/\((\d+) ids/) || [, "?"])[1];
+const rowsY = GP.y + 230;
+const gRowB = text(left5, rowsY, "", 24, P.vio, "l", 700), gRowP = text(left5, rowsY + 44, "", 24, P.b01, "l", 700);
+const gSame = kinetic(GP.x, GP.y + 360, [[`the same ${nIds} tokens as transformers`, P.grn], [` · logits within ${within}`, P.b00, 400]], 38);
+const pad = (s, n) => s + " ".repeat(Math.max(0, n - s.length));
+function shot5(t) {
+  show(gCmd, seg(t, 32.0, 32.4));
+  show(gLoad, seg(t, 32.6, 33.0));
+  gPrompt.textContent = typed(prompt, t, 34.0, 30); show(gPrompt, seg(t, 34.0, 34.1));
+  gToks.forEach((d, i) => { const a = 35.6 + toks[i].t - toks[0].t; show(d, seg(t, a, a + 0.12), 10); });
+  const e5 = clamp(t - 35.6, 0, toks[shown - 1].t - toks[0].t);
+  gClock.innerHTML = `${e5.toFixed(1)} s <span style="color:var(--b1);font-weight:400">real time</span>`;
+  show(gClock, seg(t, 35.2, 35.5));
+  const nB = Math.floor(clamp((t - 42.1) / 0.05, 0, 12)), nP = Math.floor(clamp((t - 42.5) / 0.05, 0, 12));
+  gRowB.textContent = pad("bend", 14) + toks.slice(0, nB).map((k) => pad(k.id, 7)).join("");
+  gRowP.innerHTML = esc(pad("transformers", 14)) + toks.slice(0, nP).map((k) => `<span style="color:var(--grn)">${esc(pad(k.id, 7))}</span>`).join("");
+  show(gRowB, seg(t, 42.0, 42.2)); show(gRowP, seg(t, 42.4, 42.6));
+  drawKinetic(gSame, t, 42.9, 0.05);
+}
+
+// ================= SHOT 6: the benchmark (44 - 54 s), (4800, 3900) =================
+const BZ = { x: 4800, y: 3900 }, base = BZ.y + 190, plotH = 380;
+const PT = N.per_token["smollm2-1.7b"];
+const SYS = [["llama.cpp", "F32", "llama.cpp", "other"], ["transformers", "PyTorch", "transformers", "other"],
+  ["candle", "F32", "candle", "other"], ["llama.bend", "Bend 2.0.37", "llama.bend (Bend 2.0.37)", "bend"]];
+const ms = (v) => `${Math.round(v)} ms`;
+const charts = [
+  { x0: BZ.x - 820, w: 700, max: Math.max(...SYS.map((s) => PT["1"][s[2]])) * 1.05, title: "1.7B · ms per token · 1 thread", th: "1" },
+  { x0: BZ.x + 120, w: 700, max: Math.max(...SYS.map((s) => PT["16"][s[2]])) * 1.05, title: "16 threads", th: "16" },
+];
+const benchText = [];
+let ci = 0;
+charts.forEach((ch, k) => {
+  const n = SYS.length, gap = 28, bw = (ch.w - gap * (n - 1)) / n;
+  benchText.push([text(ch.x0 + ch.w / 2, BZ.y - 300, ch.title, 32, P.b02, "c", 700), 45.2 + k * 0.3]);
+  el("div", "", { position: "absolute", left: ch.x0 - 10 + "px", top: base + "px", width: ch.w + 20 + "px", height: "1px", background: "#d9d3c7" });
+  SYS.forEach(([lab, sublab, keyName, kind], i) => {
+    const v = ch.th === "1" ? PT["1"][keyName] : PT["16"][keyName];
+    const x = ch.x0 + i * (bw + gap) + bw / 2, h = Math.max(3, (v / ch.max) * plotH);
+    const idx = ci++, at = 45.8 + k * 0.5 + i * 0.22;
+    key(idx, 44.1 + idx * 0.04, 1.6, { x, y: base - 1.5, w: bw, h: 3, r: 2, c: kind === "bend" ? P.vio : P.g2, o: 1, hz: 0 });
+    key(idx, at, 1.0, { y: base - h / 2, h });
+    const col = kind === "bend" ? P.vio : P.b01;
+    benchText.push([text(x, base - h - 46, ms(v), 26, col, "c", kind === "bend" ? 700 : 400), at + 0.5]);
+    benchText.push([text(x, base + 16, lab, 22, kind === "bend" ? P.vio : P.b00, "c", kind === "bend" ? 700 : 400), at]);
+    benchText.push([text(x, base + 46, sublab, 19, P.b1, "c"), at]);
+  });
+});
+for (let i = ci; i < 26; i++) key(i, 44.0, 0.5, { w: 0, h: 0, o: 0 }, "smooth");
+const r16 = PT["16"]["llama.bend (Bend 2.0.37)"] / PT["16"]["llama.cpp"], r1 = PT["1"]["llama.bend (Bend 2.0.37)"] / PT["1"]["llama.cpp"];
+const bNote = kinetic(BZ.x, BZ.y + 310, [[`llama.cpp is still ${r1.toFixed(1)}× faster on one thread, ${r16.toFixed(1)}× on 16.`, P.ora]], 36);
+const own16 = Math.round(N.own_clock["smollm2-1.7b"]["16"]["llama.bend (Bend 2.0.37)"]);
+const bWhy = text(BZ.x, BZ.y + 370, `Bend 2 emits scalar code: no BLAS, no SIMD. By its own clock, llama.bend takes ${own16} ms on 16 threads.`, 24, P.b00, "c");
+function shot6(t) {
+  for (const [d, a] of benchText) show(d, seg(t, a, a + 0.4), 10);
+  drawKinetic(bNote, t, 48.8, 0.08);
+  show(bWhy, seg(t, 50.2, 50.7));
+}
+
+// ================= SHOT 7: back to the logo (54 - 60 s) =================
+for (let i = 0; i < 9; i++) { const [x, y] = gPos(i); key(i, 54.5 + i * 0.07, 2.4, { x, y, w: G.sz, h: G.sz, r: 8, c: i === 5 ? P.vio : P.g2, o: 1, hz: 0 }); }
+
+// ---------------- frame ----------------
+const SHOTS = [[shot1, 0, 7.5], [shot2, 6.5, 60], [shot3, 11.5, 22], [shot4, 20.5, 32], [shot5, 30.5, 45], [shot6, 43.5, 60]];
+for (const d of W.querySelectorAll(".t")) d.style.opacity = 0;
+for (const k of [hookLine, cBad, gSame, bNote]) { k.d.style.opacity = 1; for (const s of k.spans) s.style.opacity = 0; }
+window.render = (t) => {
+  camera(t);
+  for (const c of cells) drawCell(c, t);
+  for (const [f, a, b] of SHOTS) if (t >= a && t <= b) f(t);
+};
+window.DURATION = DURATION;
+window.__ready = true;
+</script>

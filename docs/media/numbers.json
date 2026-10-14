@@ -1,0 +1,394 @@
+{
+ "_note": "Every number shown in the README deck and the launch video, exported from the benchmark run's summary (BENCHMARK.md has the same numbers). ms per generated token are medians of the marginal cost; start-up is the wall time of a run that loads the model and generates one token, at 16 threads; own_clock is the program's own per-token timestamps, iqr the interquartile range of the samples.",
+ "date": "2026-10-13",
+ "commit": "3ea435a",
+ "machine": "Intel Core Ultra 7 155H, 32 GB",
+ "per_token": {
+  "smollm2-135m": {
+   "1": {
+    "llama.cpp": 23.7,
+    "transformers": 26.3,
+    "llama.bend (Bend 2.0.36)": 111.1,
+    "candle": 26.6,
+    "llama.bend (Bend 2.0.37)": 121.3
+   },
+   "16": {
+    "transformers": 21.1,
+    "candle": 28.8,
+    "llama.bend (Bend 2.0.36)": 74.5,
+    "llama.bend (Bend 2.0.37)": 76.7,
+    "llama.cpp": 14.0
+   }
+  },
+  "smollm2-360m": {
+   "1": {
+    "llama.bend (Bend 2.0.36)": 291.9,
+    "llama.cpp": 63.1,
+    "transformers": 57.1,
+    "candle": 71.6,
+    "llama.bend (Bend 2.0.37)": 283.0
+   },
+   "16": {
+    "candle": 74.3,
+    "llama.bend (Bend 2.0.36)": 134.5,
+    "llama.bend (Bend 2.0.37)": 132.6,
+    "llama.cpp": 28.3,
+    "transformers": 40.0
+   }
+  },
+  "smollm2-1.7b": {
+   "1": {
+    "candle": 291.6,
+    "transformers": 230.8,
+    "llama.cpp": 324.2,
+    "llama.bend (Bend 2.0.36)": 1161.5,
+    "llama.bend (Bend 2.0.37)": 1203.3
+   },
+   "16": {
+    "candle": 294.8,
+    "llama.bend (Bend 2.0.37)": 492.0,
+    "transformers": 132.5,
+    "llama.cpp": 101.4,
+    "llama.bend (Bend 2.0.36)": 418.9
+   }
+  }
+ },
+ "tokens": {
+  "smollm2-135m": 32,
+  "smollm2-360m": 32,
+  "smollm2-1.7b": 128
+ },
+ "curve512": {
+  "smollm2-135m": {
+   "1": {
+    "llama.cpp": 24.9,
+    "llama.bend (Bend 2.0.37)": 132.3
+   },
+   "16": {
+    "llama.cpp": 14.2,
+    "llama.bend (Bend 2.0.37)": 87.1
+   }
+  },
+  "smollm2-360m": {
+   "1": {
+    "llama.cpp": 65.1,
+    "llama.bend (Bend 2.0.37)": 309.6
+   },
+   "16": {
+    "llama.bend (Bend 2.0.37)": 153.6,
+    "llama.cpp": 28.8
+   }
+  },
+  "smollm2-1.7b": {
+   "1": {
+    "llama.bend (Bend 2.0.37)": 1164.8,
+    "llama.cpp": 328.9
+   },
+   "16": {
+    "llama.cpp": 103.7,
+    "llama.bend (Bend 2.0.37)": 423.2
+   }
+  }
+ },
+ "growth": {
+  "smollm2-135m": {
+   "1": {
+    "bend": "2.0.37",
+    "first": 124.6,
+    "last": 145.3,
+    "ms_per_position": 0.056
+   },
+   "16": {
+    "bend": "2.0.37",
+    "first": 78.9,
+    "last": 94.9,
+    "ms_per_position": 0.042
+   }
+  },
+  "smollm2-360m": {
+   "1": {
+    "bend": "2.0.37",
+    "first": 293.0,
+    "last": 327.0,
+    "ms_per_position": 0.089
+   },
+   "16": {
+    "bend": "2.0.37",
+    "first": 147.7,
+    "last": 164.5,
+    "ms_per_position": 0.045
+   }
+  },
+  "smollm2-1.7b": {
+   "1": {
+    "bend": "2.0.37",
+    "first": 1161.3,
+    "last": 1230.6,
+    "ms_per_position": 0.178
+   },
+   "16": {
+    "bend": "2.0.37",
+    "first": 427.0,
+    "last": 451.6,
+    "ms_per_position": 0.066
+   }
+  }
+ },
+ "startup": {
+  "smollm2-135m": {
+   "transformers": {
+    "s": 2.6,
+    "mb": 1168
+   },
+   "candle": {
+    "s": 0.2,
+    "mb": 791
+   },
+   "llama.bend (Bend 2.0.36)": {
+    "s": 4.4,
+    "mb": 785
+   },
+   "llama.bend (Bend 2.0.37)": {
+    "s": 4.4,
+    "mb": 781
+   },
+   "llama.cpp": {
+    "s": 0.2,
+    "mb": 743
+   }
+  },
+  "smollm2-360m": {
+   "candle": {
+    "s": 0.4,
+    "mb": 2107
+   },
+   "llama.bend (Bend 2.0.36)": {
+    "s": 11.6,
+    "mb": 2331
+   },
+   "llama.bend (Bend 2.0.37)": {
+    "s": 11.5,
+    "mb": 2332
+   },
+   "llama.cpp": {
+    "s": 0.2,
+    "mb": 1752
+   },
+   "transformers": {
+    "s": 2.7,
+    "mb": 2469
+   }
+  },
+  "smollm2-1.7b": {
+   "candle": {
+    "s": 2.5,
+    "mb": 9844
+   },
+   "llama.bend (Bend 2.0.37)": {
+    "s": 66.4,
+    "mb": 6935
+   },
+   "transformers": {
+    "s": 4.1,
+    "mb": 10189
+   },
+   "llama.cpp": {
+    "s": 0.5,
+    "mb": 8116
+   },
+   "llama.bend (Bend 2.0.36)": {
+    "s": 73.0,
+    "mb": 6935
+   }
+  }
+ },
+ "same_output": {
+  "smollm2-135m": true,
+  "smollm2-360m": true,
+  "smollm2-1.7b": true
+ },
+ "own_clock": {
+  "smollm2-135m": {
+   "1": {
+    "llama.cpp": 23.7,
+    "llama.bend (Bend 2.0.36)": 118.8,
+    "candle": 26.6,
+    "llama.bend (Bend 2.0.37)": 118.8
+   },
+   "16": {
+    "candle": 29.0,
+    "llama.bend (Bend 2.0.36)": 71.9,
+    "llama.bend (Bend 2.0.37)": 71.9,
+    "llama.cpp": 13.8
+   }
+  },
+  "smollm2-360m": {
+   "1": {
+    "llama.bend (Bend 2.0.36)": 287.5,
+    "llama.cpp": 63.0,
+    "candle": 71.4,
+    "llama.bend (Bend 2.0.37)": 290.6
+   },
+   "16": {
+    "candle": 74.4,
+    "llama.bend (Bend 2.0.36)": 131.2,
+    "llama.bend (Bend 2.0.37)": 134.4,
+    "llama.cpp": 27.9
+   }
+  },
+  "smollm2-1.7b": {
+   "1": {
+    "candle": 291.5,
+    "llama.cpp": 324.1,
+    "llama.bend (Bend 2.0.36)": 1207.8,
+    "llama.bend (Bend 2.0.37)": 1178.9
+   },
+   "16": {
+    "candle": 298.7,
+    "llama.bend (Bend 2.0.37)": 425.8,
+    "llama.cpp": 101.2,
+    "llama.bend (Bend 2.0.36)": 422.7
+   }
+  }
+ },
+ "iqr": {
+  "smollm2-135m": {
+   "1": {
+    "llama.cpp": [
+     23.6,
+     23.7
+    ],
+    "transformers": [
+     25.7,
+     26.6
+    ],
+    "llama.bend (Bend 2.0.36)": [
+     106.6,
+     118.6
+    ],
+    "candle": [
+     26.6,
+     26.9
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     120.0,
+     124.2
+    ]
+   },
+   "16": {
+    "transformers": [
+     15.9,
+     24.7
+    ],
+    "candle": [
+     27.5,
+     28.9
+    ],
+    "llama.bend (Bend 2.0.36)": [
+     74.2,
+     75.8
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     76.3,
+     77.5
+    ],
+    "llama.cpp": [
+     13.9,
+     14.0
+    ]
+   }
+  },
+  "smollm2-360m": {
+   "1": {
+    "llama.bend (Bend 2.0.36)": [
+     291.9,
+     292.5
+    ],
+    "llama.cpp": [
+     63.1,
+     63.1
+    ],
+    "transformers": [
+     57.1,
+     58.4
+    ],
+    "candle": [
+     71.3,
+     71.8
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     266.6,
+     287.1
+    ]
+   },
+   "16": {
+    "candle": [
+     74.0,
+     75.7
+    ],
+    "llama.bend (Bend 2.0.36)": [
+     120.8,
+     140.1
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     124.5,
+     135.1
+    ],
+    "llama.cpp": [
+     27.9,
+     28.5
+    ],
+    "transformers": [
+     35.3,
+     40.4
+    ]
+   }
+  },
+  "smollm2-1.7b": {
+   "1": {
+    "candle": [
+     291.5,
+     309.9
+    ],
+    "transformers": [
+     228.7,
+     231.1
+    ],
+    "llama.cpp": [
+     317.5,
+     324.2
+    ],
+    "llama.bend (Bend 2.0.36)": [
+     1155.4,
+     1200.1
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     1184.7,
+     1214.0
+    ]
+   },
+   "16": {
+    "candle": [
+     293.6,
+     308.3
+    ],
+    "llama.bend (Bend 2.0.37)": [
+     462.0,
+     501.1
+    ],
+    "transformers": [
+     129.9,
+     136.2
+    ],
+    "llama.cpp": [
+     101.3,
+     101.5
+    ],
+    "llama.bend (Bend 2.0.36)": [
+     394.9,
+     423.9
+    ]
+   }
+  }
+ }
+}

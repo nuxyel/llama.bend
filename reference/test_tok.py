@@ -3,7 +3,7 @@ import os, subprocess, sys, tempfile, time
 from tokenizers import Tokenizer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-D = os.path.join(ROOT, "data")
+from models import D  # noqa: E402  (the tokenizer tables of MODEL)
 EXE = sys.argv[1] if len(sys.argv) > 1 else None
 
 CASES = [
@@ -127,4 +127,5 @@ def main():
     print("FAILURES:", failures)
     sys.exit(1 if failures else 0)
 
-main()
+if __name__ == "__main__":
+    main()

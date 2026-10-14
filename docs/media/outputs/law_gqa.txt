@@ -1,0 +1,5 @@
+law gqa_head:
+  for +j: Nat
+  for +i: Nat
+  for +k: Nat
+  {Nat.div(Nat.add(Nat.mul(j, 1n+Nat.add(i, k)), i), 1n+Nat.add(i, k)) == j : Nat}

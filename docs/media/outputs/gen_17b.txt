@@ -1,0 +1,41 @@
+weights loaded in 71.2s
+prompt ids: 504 3575 282 4649 314 
+  id 7042  logit 1099424380 16.985588  t=1.2s
+  id 30  logit 1100828538 19.663807  t=1.4s
+  id 198  logit 1096586841 13.786706  t=1.7s
+  id 198  logit 1097773825 14.918702  t=2.0s
+  id 504  logit 1098587062 15.694265  t=2.5s
+  id 3575  logit 1099557347 17.239202  t=2.8s
+  id 282  logit 1103491624 24.74324  t=3.1s
+  id 260  logit 1098025100 15.158337  t=3.5s
+  id 1797  logit 1098969960 16.11885  t=3.9s
+  id 1918  logit 1100439836 18.922417  t=4.3s
+  id 314  logit 1103210134 24.20634  t=4.6s
+  id 4438  logit 1100894684 19.78997  t=5.0s
+  id 28  logit 1101360050 20.677586  t=5.4s
+  id 422  logit 1100875632 19.753632  t=5.8s
+  id 30  logit 1102656560 23.150482  t=6.2s
+  id 51  logit 1102449018 22.754627  t=6.6s
+  id 30  logit 1102549581 22.946436  t=7.0s
+  id 198  logit 1100671508 19.364296  t=7.4s
+  id 198  logit 1100976308 19.945656  t=7.8s
+  id 504  logit 1099593274 17.307728  t=8.2s
+  id 3575  logit 1100787129 19.584826  t=8.6s
+  id 282  logit 1103862557 25.450739  t=9.0s
+  id 260  logit 1098502504 15.613625  t=9.4s
+  id 1797  logit 1099099488 16.365906  t=9.8s
+  id 8378  logit 1100542874 19.118946  t=10.2s
+  id 314  logit 1102634872 23.109116  t=10.7s
+  id 4528  logit 1101713087 21.35095  t=11.1s
+  id 30  logit 1102016448 21.929565  t=11.5s
+  id 198  logit 1101052689 20.091341  t=11.9s
+  id 198  logit 1101268700 20.50335  t=12.3s
+  id 504  logit 1099926972 17.944206  t=12.7s
+  id 3575  logit 1101263741 20.49389  t=13.1s
+text: The capital of France is Paris.
+
+The capital of the United States is Washington, D.C.
+
+The capital of the United Kingdom is London.
+
+The capital

@@ -1,11 +1,11 @@
-# Python dependencies of the reference side (prep, oracle, tests).
-# Tested (2026-10-09, Python 3.14.7): numpy 2.5.3, torch 2.14.1+cpu, transformers 5.19.0, tokenizers 0.23.2,
-# safetensors 0.8.0, huggingface_hub 1.33.0, regex 2026.9.29.
+# Python dependencies of the reference side (prep, oracles, tests), pinned to the versions every test was run
+# with (2026-10-10, Python 3.14.7). The numeric tests compare against transformers' order of F32 operations, so a
+# different version may move the expected values by a few ulps; torch comes from the CPU wheel index.
 --extra-index-url https://download.pytorch.org/whl/cpu
-numpy>=2.0
-torch>=2.6
-transformers>=4.46
-tokenizers>=0.20
-safetensors>=0.5
-huggingface_hub>=0.26
-regex>=2024.11
+numpy==2.5.3
+torch==2.14.1+cpu
+transformers==5.19.0
+tokenizers==0.23.2
+safetensors==0.8.0
+huggingface_hub==1.33.0
+regex==2026.9.29

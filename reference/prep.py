@@ -1,9 +1,10 @@
-"""Prepares SmolLM2-135M for Bend (milestone 1) and checks the result.
+"""Prepares a model for Bend (milestone 1) and checks the result. The model is MODEL (models.py; default
+smollm2-135m), downloaded at its pinned revision into data/<MODEL>/.
 
-  reference/.venv/bin/python reference/prep.py          download (pinned revision) and write data/
-  reference/.venv/bin/python reference/prep.py --check  verify what is in data/
+  reference/.venv/bin/python reference/prep.py          download (pinned revision) and write data/<MODEL>/
+  reference/.venv/bin/python reference/prep.py --check  verify what is in data/<MODEL>/
 
-Writes to data/:
+Writes to data/<MODEL>/:
   hf/            config.json, tokenizer.json, model.safetensors as downloaded
   w/<name>.bin   one little-endian float32 file per tensor, row = output (the PyTorch Linear layout), the layout
                  bend-ml's loader reads; names in WEIGHTS below
@@ -11,6 +12,8 @@ Writes to data/:
   ids.txt        the model id of every symbol of that scheme: 256 bytes, then one per rule; -1 for the 21 bytes
                  that have no token (0xC0, 0xC1, 0xF5-0xFF and six control bytes): `tokenizers` drops them
                  from a piece before the merges, and so does encode() below
+  cfg.txt        the config the Bend package reads (bend-ml-llama's Cfg): kv g half f layers vocab, then the F32
+                 bits of rms_norm_eps and rope_theta, in decimal; cfg_line() checks the structure it assumes
   perm.txt       what the Bend tokenizer reads: the model id of byte b, 0 for the 21 bytes without a token (0 is
                  <|endoftext|>, never a byte's id; the Bend number parser does not read "-1"); merge k is 252 + k
 """
@@ -20,12 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 import bpe_ref
 
-REPO = "HuggingFaceTB/SmolLM2-135M"
-REV = "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"  # checked 2026-10-09
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-D = os.path.join(ROOT, "data")
-HF = os.path.join(D, "hf")
-W = os.path.join(D, "w")
+from models import REPO, REV, D, HF, W, config
 
 # the GPT-2 regex of the ByteLevel pre-tokenizer (use_regex = true)
 GPT2_PAT = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -54,10 +52,6 @@ def bytes_to_unicode():
     return dict(zip(bs, map(chr, cs)))
 
 
-def config():
-    return json.load(open(os.path.join(HF, "config.json")))
-
-
 def weights(c):
     """(short name, safetensors name, shape) for every tensor; the LM head is tied to emb."""
     h, kv = c["hidden_size"], c["num_key_value_heads"] * (c["hidden_size"] // c["num_attention_heads"])
@@ -80,11 +74,25 @@ def weights(c):
     return out
 
 
+def cfg_line(c):
+    """The Cfg of bend-ml-llama for a config.json, after checking that the model is the Llama the package runs."""
+    heads, kv, hidden = c["num_attention_heads"], c["num_key_value_heads"], c["hidden_size"]
+    hd = c.get("head_dim") or hidden // heads
+    assert c["architectures"] == ["LlamaForCausalLM"] and c["hidden_act"] == "silu", "not a Llama with SwiGLU"
+    assert heads % kv == 0 and hd % 2 == 0 and heads * hd == hidden, "heads, key/value heads and head size"
+    assert not c.get("attention_bias") and not c.get("mlp_bias"), "biases are not supported"
+    assert c.get("rope_scaling") is None and not c.get("rope_interleaved", False), "only plain rotate-half RoPE"
+    assert c["tie_word_embeddings"], "the LM head must be the embedding"
+    bits = lambda x: int(np.array([x], dtype="<f4").view("<u4")[0])
+    return " ".join(map(str, [kv, heads // kv, hd // 2, c["intermediate_size"], c["num_hidden_layers"],
+                              c["vocab_size"], bits(c["rms_norm_eps"]), bits(c["rope_theta"])])) + "\n"
+
+
 def download():
     from huggingface_hub import hf_hub_download
     for name in ["config.json", "tokenizer.json", "model.safetensors"]:
         hf_hub_download(REPO, name, revision=REV, local_dir=HF)
-    print(f"downloaded {REPO}@{REV[:7]} into data/hf/")
+    print(f"downloaded {REPO}@{REV[:7]} into {os.path.relpath(HF)}/")
 
 
 def write_weights():
@@ -98,7 +106,7 @@ def write_weights():
             a = t.float().numpy().astype("<f4")
             a.tofile(os.path.join(W, short + ".bin"))
             total += a.size
-    print(f"data/w/: {total:,} numbers")
+    print(f"{os.path.relpath(W)}/: {total:,} numbers")
 
 
 def tables():
@@ -171,7 +179,13 @@ def check():
             total += got.size
     n_tensors = len(weights(c))
     print(f"weights: {n_tensors} files bit for bit = bf16 << 16: {'ok' if ok else 'FAILED'}; {total:,} numbers")
-    # 2. tokenizer: rules in order (what Bend will run) against tokenizers
+    # 2. the config the Bend package reads
+    want_cfg = cfg_line(c)
+    path = os.path.join(D, "cfg.txt")
+    cfg_ok = os.path.exists(path) and open(path).read() == want_cfg
+    print(f"cfg.txt: {want_cfg.strip()}: {'ok' if cfg_ok else 'FAILED (run prep again)'}")
+    ok &= cfg_ok
+    # 3. tokenizer: rules in order (what Bend will run) against tokenizers
     table, ids, rep = tables()
     print(f"tokenizer: {rep['rules']} rules, {rep['vocab']} ids, special ids {rep['added'][0]}..{rep['added'][-1]}; "
           f"rules whose token is missing from the vocabulary: {rep['missing']}; rules that rebuild an earlier "
@@ -207,6 +221,8 @@ def main():
     os.makedirs(D, exist_ok=True)
     download()
     write_weights()
+    open(os.path.join(D, "cfg.txt"), "w").write(cfg_line(config()))
+    print("cfg.txt:", cfg_line(config()).strip())
     _, _, rep = tables()
     print("tables:", rep)
 
