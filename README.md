@@ -116,6 +116,10 @@ The other models are one variable away: `make prep check MODEL=smollm2-360m`, or
 import bend-ml-llama@0.1.0.0/main.bend as M
 ```
 
+`make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
+generates 128 tokens on the 135M, fails if they differ from `transformers`' (`bench/`), and prints one line
+(`ms_per_token=... load_s=... tokens=128 ok`). `MODEL=` and `THREADS=` pick the model and the thread count.
+
 `make media` regenerates the figures on this page from real runs (needs node, ffmpeg and Brave). CI runs `make check`
 on every push. `main` holds the released versions; work in progress lives on `devel`.
 

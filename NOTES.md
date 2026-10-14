@@ -667,3 +667,11 @@ idle machine (16:26 to 19:35; `BENCHMARK.md`). Every system produced the same to
   every figure is drawn from `docs/media/numbers.json`, exported from the run's summary, or from real outputs
   (`scripts/capture_outputs.sh`). The launch video (`render_video.mjs`, attached to the v1.0.0 release, not committed)
   shows the 1.7B's own clock instead of the 2.0.36 bar, since it has no room for the note on loading.
+
+## 2026-10-13: a stale comment in bend-ml-llama 0.1.0.0
+
+The comment above `law kv_room` in `llama/main.bend` still says "The type does not stop a caller from pushing at
+t >= cap; the callers size cap to the positions they run". That was true before `KV<cap, t>` (2026-10-12): now `KV.push`
+asks for a proof that `t < cap`, so such a push does not compile. The comment shipped in `bend-ml-llama@0.1.0.0`, which
+is permanent; it gets fixed with the next real change to the package (a comment alone is not worth a new version), as
+with bend-ml's `bmv` comment.

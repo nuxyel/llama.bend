@@ -40,8 +40,19 @@ def bits(f: F32) -> U32:
     case F32{w}:
       U32{w}
 
+# r < 1000 milliseconds, as three digits
+def ms3(small: Bool, mid: Bool, +r: Nat) -> String:
+  match small mid:
+    case True{} _:
+      "00" ++ Nat.show(r)
+    case False{} True{}:
+      "0" ++ Nat.show(r)
+    case False{} False{}:
+      Nat.show(r)
+
+# dt milliseconds as seconds with three decimals (make bench reads the per-token times at this resolution)
 def tsec2(+dt: Nat) -> String:
-  Nat.show(Nat.div(dt, 1000n)) ++ "." ++ Nat.show(Nat.div(Nat.mod(dt, 1000n), 100n)) ++ "s"
+  Nat.show(Nat.div(dt, 1000n)) ++ "." ++ ms3(Nat.is_lt(Nat.mod(dt, 1000n), 10n), Nat.is_lt(Nat.mod(dt, 1000n), 100n), Nat.mod(dt, 1000n)) ++ "s"
 
 def tsec(t1: Nat, t0: Nat) -> String:
   tsec2(Nat.sub(t1, t0))

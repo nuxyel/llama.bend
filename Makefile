@@ -6,7 +6,7 @@ DIR := data/$(MODEL)
 export PATH := $(HOME)/.bend/bin:$(HOME)/.elan/bin:$(PATH)
 PY := reference/.venv/bin/python
 
-.PHONY: setup prep laws check bits media
+.PHONY: setup prep laws check bits bench media
 
 setup:            ## install the pinned Bend and Lean if missing, create the Python venv
 	scripts/setup.sh
@@ -41,6 +41,9 @@ bits:             ## forward and gen give the same bits as the saved ones ($(DIR
 	bend demo/forward.bend -o .scratch/forward
 	bend demo/gen.bend -o .scratch/gen
 	$(PY) reference/bits.py check .scratch/forward .scratch/gen
+
+bench:            ## one line: ms per token by the program's own clock, failing if the tokens differ from transformers'
+	scripts/bench.sh
 
 media:            ## regenerate the README images from docs/media/outputs/ and numbers.json (needs node, ffmpeg, Brave)
 	scripts/make_media.sh
