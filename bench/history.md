@@ -8,3 +8,4 @@ detected by `.github/workflows/bend-release.yml`, which opens an issue.
 
 | date | Bend | llama.bend | 1 thread | 16 threads | previous release, 1 / 16 | rounds |
 |---|---|---|---|---|---|---|
+| 2026-10-13 | 2.0.37 | 8775c40 | 123.2 | 79.1 | 2.0.36: 123.3 / 79.0 | 5 |
