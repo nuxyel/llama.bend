@@ -1,0 +1,106 @@
+name: New Bend release
+
+# Every day: is there a Bend release newer than the pin (scripts/setup.sh)? If so, and no issue exists for it yet,
+# build llama.bend with it, run the checker and `make bench` (do the tokens still match transformers?), and open an
+# issue with the result. The runner's timings are not comparable with the reference machine (shared hardware); the
+# number that goes into bench/history.md is measured on the reference machine (scripts/bench_compare.sh).
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Is there a new Bend release?
+        id: new
+        shell: bash
+        run: |
+          latest=$(gh release view -R bendlang/bend --json tagName -q .tagName | sed 's/^v//')
+          pinned=$(sed -n 's/^BEND_VERSION=//p' scripts/setup.sh)
+          seen=$(gh issue list -R "$GITHUB_REPOSITORY" --state all --search "\"Bend $latest:\" in:title" --json number -q 'length')
+          echo "latest=$latest pinned=$pinned issues=$seen"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" != "$pinned" ] && [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)" = "$latest" ] && [ "$seen" = 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v7
+        if: steps.new.outputs.run == 'true'
+        with:
+          python-version: "3.14"
+
+      - name: Set up (the pinned toolchain and the Python venv) and prepare SmolLM2-135M
+        if: steps.new.outputs.run == 'true'
+        run: make setup prep
+
+      - name: Install the new Bend next to the pinned one
+        if: steps.new.outputs.run == 'true'
+        id: bend
+        shell: bash
+        run: |
+          v=${{ steps.new.outputs.latest }}
+          home=$RUNNER_TEMP/bend-$v
+          mkdir -p "$home/.bend/bin" "$RUNNER_TEMP/dl"
+          name=bend-$v-linux-x64.tar.gz
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/dl/$name" "https://github.com/bendlang/bend/releases/download/v$v/$name"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/dl/$name" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          tar -xzf "$RUNNER_TEMP/dl/$name" -C "$RUNNER_TEMP/dl"
+          mv "$RUNNER_TEMP/dl/bend/bend2" "$RUNNER_TEMP/dl/bend/guide" "$home/.bend/"
+          mv "$RUNNER_TEMP/dl/bend/bin/bend" "$home/.bend/bin/bend"
+          printf '#!/bin/sh\nHOME=%s exec %s/.bend/bin/bend "$@"\n' "$home" "$home" > "$RUNNER_TEMP/bend-new"
+          chmod +x "$RUNNER_TEMP/bend-new"
+          "$RUNNER_TEMP/bend-new" version
+
+      - name: Checker and benchmark with the new Bend
+        if: steps.new.outputs.run == 'true'
+        id: run
+        shell: bash
+        run: |
+          B=$RUNNER_TEMP/bend-new
+          export BEND_NO_TELEMETRY=1
+          laws=$("$B" llama/main.bend 2>&1 | tail -1)
+          rejected=ok
+          for f in tests/bad_*.bend; do "$B" "$f" 2>&1 | grep -q "^- expected" || rejected="COMPILED: $f"; done
+          bench=$(BEND="$B" scripts/bench.sh 2>&1 | tail -3)
+          {
+            echo "laws=$laws"
+            echo "rejected=$rejected"
+            echo "bench<<EOF"; echo "$bench"; echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue
+        if: steps.new.outputs.run == 'true'
+        shell: bash
+        run: |
+          v=${{ steps.new.outputs.latest }}
+          body=$(cat <<EOF
+          Bend $v is out: https://github.com/bendlang/bend/releases/tag/v$v
+
+          On a GitHub runner (shared hardware, timings not comparable with the reference machine):
+
+          - checker on \`llama/main.bend\`: \`${{ steps.run.outputs.laws }}\`
+          - programs that must not compile: ${{ steps.run.outputs.rejected }}
+          - \`make bench\`:
+          \`\`\`
+          ${{ steps.run.outputs.bench }}
+          \`\`\`
+          - linux-x64 tarball SHA256: \`${{ steps.bend.outputs.sha256 }}\`
+
+          To do on the reference machine (idle, on mains power, \`performance\` profile):
+          1. Install it next to the pinned one, then \`scripts/bench_compare.sh <pinned bend> <new bend>\`.
+          2. Add the line to \`bench/history.md\`.
+          3. If everything passes, bump the pin (\`scripts/bump_bend.sh $v\`, then \`docs/release.md\`).
+          EOF
+          )
+          gh issue create -R "$GITHUB_REPOSITORY" --title "Bend $v: make bench" --body "$body"
