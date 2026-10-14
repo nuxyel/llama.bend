@@ -122,6 +122,7 @@ generates 128 tokens on the 135M, fails if they differ from `transformers`' (`be
 
 `make media` regenerates the figures on this page from real runs (needs node, ffmpeg and Brave). CI runs `make check`
 on every push. `main` holds the released versions; work in progress lives on `devel`.
+Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull requests go to `devel`).
 
 ## 06 · Limits
 
