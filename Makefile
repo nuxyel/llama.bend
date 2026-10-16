@@ -14,8 +14,9 @@ setup:            ## install the pinned Bend and Lean if missing, create the Pyt
 prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, 540 MB written)
 	$(PY) reference/prep.py
 
-laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected
+laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected; main.bend free of foreign code
 	! grep -n "@unsafe\|?TODO" llama/*.bend demo/*.bend tests/*.bend
+	! grep -n "binary-read" llama/main.bend
 	bend llama/main.bend
 	bend llama/main.bend --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK"
 	for f in tests/bad_*.bend; do bend $$f 2>&1 | grep -q "^- expected" && echo "rejected as it must be: $$f" || { echo "COMPILED, but must not: $$f"; exit 1; }; done

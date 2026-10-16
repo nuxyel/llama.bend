@@ -7,6 +7,7 @@
 
 import Base
 import ../llama/main.bend as M
+import ../llama/load.bend as L
 
 # ---- printing ----
 
@@ -68,7 +69,7 @@ def read_ids(xs: List<String>) -> List<&2, Nat>:
 def run_ids(+dir: String, +ids: List<&2, Nat>) -> IO(Unit):
   do IO<Unit>:
     +c : M.Cfg <- M.read_cfg(dir)
-    m : M.Model<c> <- M.load_model(c, dir)
+    m : M.Model<c> <- L.load_model(c, dir)
     go(ids, c, List.length(&2, Nat, ids), 0n, {==}, m, M.caches(c, M.Cfg.layers(c), List.length(&2, Nat, ids)))
 
 def dispatch(args: List<String>) -> IO(Unit):

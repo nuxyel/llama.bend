@@ -870,6 +870,37 @@ def block(+c: Cfg, +d: Nat, lw: LW<c>, -cap: Nat, +t: Nat, kv: KV<cap, t>, -room
                     +y = T.zip_with.add(x1, m)
                     BR{y, kv2, LW{ln1, wq, wk, wv, wo, ln2, wg, wu, wd}, Act{n1, q, k, v, flat(qs), flat(ks), at, a, n2, m, y}}))))))))
 
+# block for generation: the same computation, with the activations left empty. Generation never reads them, and
+# building them (the copies of the rotated heads among them) cost about a fifth of each token on 16 threads (found by
+# Mathews Fernando's bend-lint, unused_result). It is a copy of block's body, not a flag in it: a flag that chooses
+# after the computation keeps every intermediate alive to the end, and that measured slower than building them.
+def block_gen(+c: Cfg, +d: Nat, lw: LW<c>, -cap: Nat, +t: Nat, kv: KV<cap, t>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, +x: List<&2, F32>) -> BR<c, cap, t>:
+  match lw:
+    case LW{+ln1, wq, wk, wv, wo, +ln2, wg, wu, wd}:
+      +n1 = rmsnorm(c, x, ln1)
+      mv(BR<c, cap, t>, Cfg.dim(c), Cfg.dim(c), wq, n1, wq => +q =>
+        mv(BR<c, cap, t>, Cfg.kvw(c), Cfg.dim(c), wk, n1, wk => +k =>
+          mv(BR<c, cap, t>, Cfg.kvw(c), Cfg.dim(c), wv, n1, wv => +v =>
+            +qs = ropes(rt, heads(Cfg.heads(c), Cfg.half(c), q))
+            +ks = ropes(rt, heads(Cfg.kv(c), Cfg.half(c), k))
+            KA.then(BR<c, cap, t>, cap, 1n+t, attention(c, d, cap, t, qs, KV.push(c, cap, t, kv, room, joins(ks), chunks(Cfg.kv(c), Cfg.head(c), v))), kv2 => +at =>
+            mv(BR<c, cap, t>, Cfg.dim(c), Cfg.dim(c), wo, at, wo => +a =>
+              +x1 = T.zip_with.add(x, a)
+              +n2 = rmsnorm(c, x1, ln2)
+              mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wg, n2, wg => +g =>
+                mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wu, n2, wu => +u =>
+                  mv(BR<c, cap, t>, Cfg.dim(c), Cfg.ffn(c), wd, swiglu(g, u), wd => +m =>
+                    +y = T.zip_with.add(x1, m)
+                    BR{y, kv2, LW{ln1, wq, wk, wv, wo, ln2, wg, wu, wd}, Act{Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}}}))))))))
+
+# keep: block with the activations (the tests read them), or block_gen without them; chosen before anything is computed
+def block_k(keep: Bool, +c: Cfg, +d: Nat, lw: LW<c>, -cap: Nat, +t: Nat, kv: KV<cap, t>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, +x: List<&2, F32>) -> BR<c, cap, t>:
+  match keep:
+    case True{}:
+      block(c, d, lw, cap, t, kv, room, rt, x)
+    case False{}:
+      block_gen(c, d, lw, cap, t, kv, room, rt, x)
+
 # =====================================================================================================
 # The model
 # =====================================================================================================
@@ -883,17 +914,17 @@ type Run<-c: Cfg, -cap: Nat, -t: Nat> is Type:
   Run{x: List<&2, F32>, layers: List<&1, LW<c>>, cs: List<&1, KV<cap, 1n+t>>, acts: List<&2, Act>}
 
 # pend is the previous layer's result: its output is the next layer's input
-def run(+c: Cfg, +d: Nat, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, ls: List<&1, LW<c>>, cs: List<&1, KV<cap, t>>, al: List<&1, LW<c>>, ac: List<&1, KV<cap, 1n+t>>, aa: List<&2, Act>, pend: BR<c, cap, t>) -> Run<c, cap, t>:
+def run(+keep: Bool, +c: Cfg, +d: Nat, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, ls: List<&1, LW<c>>, cs: List<&1, KV<cap, t>>, al: List<&1, LW<c>>, ac: List<&1, KV<cap, 1n+t>>, aa: List<&2, Act>, pend: BR<c, cap, t>) -> Run<c, cap, t>:
   match ls cs pend:
     case Con{l, lt} Con{k, kt} BR{+y, kv, l0, act}:
-      run(c, d, cap, t, room, rt, lt, kt, l0 <> al, kv <> ac, act <> aa, block(c, d, l, cap, t, k, room, rt, y))
+      run(keep, c, d, cap, t, room, rt, lt, kt, l0 <> al, kv <> ac, act <> aa, block_k(keep, c, d, l, cap, t, k, room, rt, y))
     case _ _ BR{+y, kv, l0, act}:
       Run{y, List.reverse(&1, LW<c>, l0 <> al), List.reverse(&1, KV<cap, 1n+t>, kv <> ac), List.reverse(&2, Act, act <> aa)}
 
-def layers(+c: Cfg, +d: Nat, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, ls: List<&1, LW<c>>, cs: List<&1, KV<cap, t>>, +x: List<&2, F32>) -> Run<c, cap, t>:
+def layers(+keep: Bool, +c: Cfg, +d: Nat, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +rt: Rot, ls: List<&1, LW<c>>, cs: List<&1, KV<cap, t>>, +x: List<&2, F32>) -> Run<c, cap, t>:
   match ls cs:
     case Con{l, lt} Con{k, kt}:
-      run(c, d, cap, t, room, rt, lt, kt, Nil{}, Nil{}, Nil{}, block(c, d, l, cap, t, k, room, rt, x))
+      run(keep, c, d, cap, t, room, rt, lt, kt, Nil{}, Nil{}, Nil{}, block_k(keep, c, d, l, cap, t, k, room, rt, x))
     case _ _:
       Run{x, Nil{}, Nil{}, Nil{}}
 
@@ -915,17 +946,29 @@ def head_of(+c: Cfg, -cap: Nat, -t: Nat, +d: Nat, emb: TA.Bands<Cfg.vocab(c), Cf
       +nf = rmsnorm(c, x, lnf)
       mv(Out<c, cap, t>, Cfg.vocab(c), Cfg.dim(c), emb, nf, emb => +lg => Out{lg, nf, acts, cs, Model{d, emb, ls, lnf}})
 
-def forward.go(+c: Cfg, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +d: Nat, ls: List<&1, LW<c>>, +lnf: List<&2, F32>, cs: List<&1, KV<cap, t>>, r: TA.BRow<Cfg.vocab(c), Cfg.dim(c)>) -> Out<c, cap, t>:
+def forward.go(+keep: Bool, +c: Cfg, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +d: Nat, ls: List<&1, LW<c>>, +lnf: List<&2, F32>, cs: List<&1, KV<cap, t>>, r: TA.BRow<Cfg.vocab(c), Cfg.dim(c)>) -> Out<c, cap, t>:
   match r:
     case TA.BRow{emb, row}:
-      head_of(c, cap, t, d, emb, lnf, layers(c, d, cap, t, room, rot_at(c, t), ls, cs, row))
+      head_of(c, cap, t, d, emb, lnf, layers(keep, c, d, cap, t, room, rot_at(c, t), ls, cs, row))
 
 # token tok at position t (0-based), with the caches of positions 0..t-1 (one per layer) and room for cap positions;
-# room is the proof that t < cap
-def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
+# room is the proof that t < cap; keep: whether the result carries every layer's activations
+def forward_k(+keep: Bool, +c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
     case Model{+d, emb, ls, +lnf}:
-      forward.go(c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
+      forward.go(keep, c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
+
+# a position with every layer's activations (the tests read them)
+def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
+  forward_k(True{}, c, cap, t, m, cs, room, tok)
+
+# a position for generation: the same logits, caches and model. With bands (d > 0, more than two threads) the
+# activations are left empty, about a fifth faster per token on 16 threads; with one band (d = 0) they are kept, since
+# leaving them out measured 4-11% slower per token on one thread (llama.bend NOTES, 2026-10-16), for no reason found yet
+def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
+  match m:
+    case Model{+d, emb, ls, +lnf}:
+      forward.go(Nat.is_eq(d, 0n), c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
 
 # n empty caches, one per layer, each with room for cap positions
 def caches(+c: Cfg, n: Nat, +cap: Nat) -> List<&1, KV<cap, 0n>>:

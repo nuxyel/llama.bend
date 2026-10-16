@@ -68,10 +68,12 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `step_room`, `step_inv` | for a loop with `t + steps left = cap`: the proof that `t < cap`, and the same equation one step later |
 | `block(c, d, lw, cap, t, kv, room, rot, x) -> BR<c, cap, t>` | one layer at position `t` (`d = 0`: attention's key/value heads one after another; otherwise in parallel): the output, the cache grown to `t + 1` positions, the weights handed back, and the activations (`Act`) |
 | `forward(c, cap, t, m, cs, room, tok) -> Out<c, cap, t>` | one position of the whole model: logits, the final norm, every layer's `Act`, the caches, the model |
+| `forward_gen(c, cap, t, m, cs, room, tok)` | `forward` for generation: the same logits, caches and model, with every layer's activations left empty when the weights are in bands (more than two threads), about 20% faster per token there; `block_gen` is `block` without them |
 | `BR.then`, `Out.then` | continue with the fields of a result; a loop over positions recurses inside them |
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
 | `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model written by `prep.py` (`<dir>/w/<name>.bin`, little-endian F32, one file per tensor) |
+| `load.bend`: `load_model` | the same model, with each band of weights read straight into its array by `bend-ml-binary-read` (the 1.7B in about 8 s instead of 60-70). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean, and `make bits` checks that both loaders give the same outputs |
 
 An `Array` has a single owner, so every product hands its matrix back (`block` returns its `LW`, `forward` its
 `Model`). `Act` holds every intermediate of a layer (`n1`, `q`, `k`, `v`, `qr`, `kr`, `attn`, `a`, `n2`, `m`,

@@ -12,7 +12,8 @@
 import Base
 import ./tok.bend as K
 import ../llama/main.bend as M
-import bend-ml-bpe-tokenizer@0.1.2.0/main.bend as BPE
+import ../llama/load.bend as L
+import bend-ml-bpe-tokenizer@0.1.3.0/main.bend as BPE
 
 # ---- the prompt as UTF-8 bytes ----
 
@@ -71,10 +72,10 @@ def loop(fuel: Nat, +c: M.Cfg, +t0: Nat, -cap: Nat, +t: Nat, -inv: {Nat.add(t, f
     case 1n+p _ 0n:
       IO.pure(List<&2, Nat>, List.reverse(&2, Nat, gen))
     case 1n++p Con{+q, qt} 1n+lp:
-      M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
+      M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward_gen(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
         loop(p, c, t0, cap, 1n+t, M.step_inv(t, p, cap, inv), q, qt, 1n+lp, gen, m2, cs2))
     case 1n++p Nil{} 1n+lp:
-      M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
+      M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward_gen(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
         +am = M.argmax(lg)
         +id = M.AM.i(am)
         do IO<List<&2, Nat>>:
@@ -112,7 +113,7 @@ def run3(ok: Bool, +dir: String, +mb: List<&2, U32>, +pb: List<&2, U32>, prompt:
       do IO<Unit>:
         t0 : Nat <- IO.now()
         +c : M.Cfg <- M.read_cfg(dir)
-        model : M.Model<c> <- M.load_model(c, dir)
+        model : M.Model<c> <- L.load_model(c, dir)
         t1 : Nat <- IO.now()
         IO.print("weights loaded in " ++ tsec(t1, t0))
         generate(c, model, mb, pb, prompt, n)
