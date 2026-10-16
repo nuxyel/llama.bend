@@ -91,15 +91,19 @@ Wall time of a run that loads the model and generates one token, and peak reside
 
 | system | 135M | 360M | 1.7B |
 |---|---|---|---|
+| llama.bend, Bend 2.0.37, `llama/load.bend` (2026-10-16) | 1.0 s, 718 MB | 2.3 s, 2,270 MB | 9.1 s, 6,787 MB |
 | llama.bend, Bend 2.0.37 | 4.4 s, 781 MB | 11.5 s, 2,332 MB | 66.4 s, 6,935 MB |
 | llama.bend, Bend 2.0.36 | 4.4 s, 785 MB | 11.6 s, 2,331 MB | 73.0 s, 6,935 MB |
 | transformers 5.19 (PyTorch 2.14.1) | 2.7 s, 1,168 MB | 2.7 s, 2,469 MB | 4.1 s, 10,189 MB |
 | llama.cpp `23b0202` (F32 GGUF) | 0.2 s, 743 MB | 0.2 s, 1,752 MB | 0.5 s, 8,116 MB |
 | candle `c68b249` (F32) | 0.2 s, 791 MB | 0.4 s, 2,107 MB | 2.5 s, 9,844 MB |
 
-Loading is llama.bend's slowest part: reading a file in Bend gives one list cell per byte, and building and walking
-those lists is the cost (bend-ml `NOTES.md`, exp. 13). The weight products are the rest of the distance to llama.cpp;
-both are tracked in [`NOTES.md`](NOTES.md). On one thread the 1.7B peaks at 8.4 GB.
+Loading was llama.bend's slowest part: reading a file in Bend gives one list cell per byte, and building and walking
+those lists is the cost (bend-ml `NOTES.md`, exp. 13). Since 2026-10-16 the demos load the weight matrices with
+`bend-ml-binary-read`, which reads them straight into their arrays; the first row is that loader, measured the same
+way (3 alternated runs against the old loader, medians; the old loader measured 4.3, 11.8 and 72.2 s, 767, 2,314 and
+6,828 MB that morning). The tokens are the same. The weight products are the rest of the distance to llama.cpp,
+tracked in [`NOTES.md`](NOTES.md). On one thread the 1.7B peaks at 8.4 GB (old loader).
 
 ## Earlier runs
 

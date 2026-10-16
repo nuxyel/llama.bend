@@ -155,6 +155,10 @@
    "llama.cpp": {
     "s": 0.2,
     "mb": 743
+   },
+   "llama.bend (binary-read, 2026-10-16)": {
+    "s": 1.0,
+    "mb": 718
    }
   },
   "smollm2-360m": {
@@ -177,6 +181,10 @@
    "transformers": {
     "s": 2.7,
     "mb": 2469
+   },
+   "llama.bend (binary-read, 2026-10-16)": {
+    "s": 2.3,
+    "mb": 2270
    }
   },
   "smollm2-1.7b": {
@@ -199,6 +207,10 @@
    "llama.bend (Bend 2.0.36)": {
     "s": 73.0,
     "mb": 6935
+   },
+   "llama.bend (binary-read, 2026-10-16)": {
+    "s": 9.1,
+    "mb": 6787
    }
   }
  },

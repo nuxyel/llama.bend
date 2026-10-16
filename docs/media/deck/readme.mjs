@@ -82,17 +82,19 @@ export default ({ frame, hbars, stats, table, C }) => {
   }) });
 
   const S = N.startup["smollm2-1.7b"];
+  const BR = "llama.bend (binary-read, 2026-10-16)";
   const srow = (k, f) => [
     { label: "llama.cpp", v: f(S["llama.cpp"]) }, { label: "candle", v: f(S.candle) },
-    { label: "transformers", v: f(S.transformers) }, { label: "llama.bend", v: f(S[B37]), kind: "bend" }];
+    { label: "transformers", v: f(S.transformers) }, { label: "llama.bend, before", v: f(S[B37]), kind: "bend" },
+    { label: "llama.bend, now", v: f(S[BR]), kind: "bend" }];
   slides.push({ name: "startup", html: frame({
     kicker: "SmolLM2-1.7B · load and generate one token · 16 threads",
-    title: `the slowest part: <span class="o">loading</span>`,
+    title: `loading: <span class="o">66 s → 9 s</span>`,
     body: `<div style="display:flex;gap:60px">` +
       hbars({ w: 820, rowH: 66, labelW: 280, max: S[B37].s * 1.05, fmt: (v) => `${v} s`, title: "wall time", items: srow("s", (r) => r.s) }) +
       hbars({ w: 820, rowH: 66, labelW: 280, max: Math.max(...Object.values(S).map((r) => r.mb)) * 1.05, fmt: (v) => `${(v / 1000).toFixed(1)} GB`, title: "peak memory", items: srow("mb", (r) => r.mb) }) + `</div>`,
-    takeaway: `reading a file in Bend gives one list cell per byte`,
-    foot: FOOT,
+    takeaway: `the weights now go straight into their arrays (bend-ml-binary-read)`,
+    foot: `${N.machine} · measured on ${N.date}, commit ${N.commit}; "now" on 2026-10-16, commit 8785791`,
   }) });
 
   return slides;
