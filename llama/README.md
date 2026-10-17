@@ -8,16 +8,16 @@ structure is proved by Bend's checker and again by its kernel proved in Lean. Th
 PyTorch: all three models give the same greedy tokens as `transformers` in the
 [llama.bend](https://github.com/nuxyel/llama.bend) repository.
 
-- Bend: **2.0.37** · License: MIT · Depends on `bend-ml-tensor@0.1.2.0` and `bend-ml-tensor-array@0.1.7.0`.
+- Bend: **2.0.37** · License: MIT · Depends on `bend-ml-tensor@0.1.2.0` and `bend-ml-tensor-array@0.1.12.0`.
 - `bend llama/main.bend --verdict` → `ALL PROOFS CHECK` (no `@unsafe`, no `?TODO`, no axioms).
 
-On BendHub as `bend-ml-llama@0.1.0.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
+On BendHub as `bend-ml-llama@0.1.1.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
 programs in `demo/` do with `../llama/main.bend`).
 
 ```python
 import Base
-import bend-ml-tensor-array@0.1.7.0/main.bend as TA
-import bend-ml-llama@0.1.0.0/main.bend as M
+import bend-ml-tensor-array@0.1.12.0/main.bend as TA
+import bend-ml-llama@0.1.1.0/main.bend as M
 
 # one position: token tok at position t, with the caches of positions 0..t-1 (one per layer) and room for cap
 # positions; room is the proof that t < cap (M.step_room gives it to a loop that keeps t + steps left = cap)
@@ -69,6 +69,7 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `block(c, d, lw, cap, t, kv, room, rot, x) -> BR<c, cap, t>` | one layer at position `t` (`d = 0`: attention's key/value heads one after another; otherwise in parallel): the output, the cache grown to `t + 1` positions, the weights handed back, and the activations (`Act`) |
 | `forward(c, cap, t, m, cs, room, tok) -> Out<c, cap, t>` | one position of the whole model: logits, the final norm, every layer's `Act`, the caches, the model |
 | `forward_gen(c, cap, t, m, cs, room, tok)` | `forward` for generation: the same logits, caches and model, with every layer's activations left empty when the weights are in bands (more than two threads), about 20% faster per token there; `block_gen` is `block` without them |
+| `forward_pre(c, cap, t, m, cs, room, tok)` | a prompt position, whose logits nobody reads: the layers and caches as `forward_gen` gives them, without the final norm and the product by the embedding (`lg` and `nf` empty) |
 | `BR.then`, `Out.then` | continue with the fields of a result; a loop over positions recurses inside them |
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
