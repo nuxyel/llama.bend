@@ -736,3 +736,65 @@ tokenizer's `repeated_call` (no change), and one not yet tried: while it reads t
 every prompt token and drops them (the embedding product, about a fifth of a position's work).
 - The demos now import `bend-ml-bpe-tokenizer@0.1.3.0` (the erased `done`): tokenizing 19 KB 24.9 -> 12.2 s, the same
   ids; `make check` 0 failures, `make bits` identical.
+
+## 2026-10-16: v1.1.0
+
+The binary-read loader, `forward_gen` and `bend-ml-bpe-tokenizer@0.1.3.0`, released through pull request #6 (CI green).
+
+## 2026-10-16: the prompt without its logits
+
+The last untried finding of bend-lint's run (`unused_result` on `gen`'s prompt loop): while it reads the prompt, `gen`
+computed every prompt token's logits, the final norm and the product by the embedding (49,152 x 576 on the 135M), and
+dropped them. `forward_pre` gives the layers and caches without them; `gen` uses it for every prompt token but the last.
+A 77-token prompt and 4 generated tokens, time to the first generated token (the program's own clock), alternated (4
+rounds, 3 for the 1.7B): 135M 9.47 -> 7.93 s on one thread, 4.57 -> 3.83 on 16 (-16%); 360M 22.78 -> 20.23 and 8.21 ->
+7.37 (-10 to -11%); 1.7B 90.44 -> 84.17 and 22.78 -> 21.55 (-5 to -7%). The same output in every run; `make bits`
+identical, `make check` 0 failures. Generation after the prompt is unchanged (the same `forward_gen`).
+
+## 2026-10-16: why one thread is slower without `Act` (not found yet)
+
+The 360M on one thread, with `Act` (as `forward_gen` runs it there) against `block_gen` without it, 24 tokens, two runs
+each, rusage of the whole process: user time 9.40-9.46 s against 10.12-10.20 s (+8%), system time 0.40 against 0.39-0.40
+s, minor page faults 1,760 against 1,759-1,763, peak memory 2,939 MB both, no major faults. The difference is all in user
+time: not allocation from the kernel, not memory pressure, but the computation itself, with more instructions or more
+cache misses; one hypothesis is that without `Act` the intermediate lists are freed in the middle of the layer instead of
+after it. Telling those apart needs hardware counters (`perf`, not installed here). Until then `forward_gen` keeps `Act`
+on one band, where it measured faster.
+
+## tensor-array 0.1.7.0 → 0.1.12.0: the load 1.7-2.4x faster (2026-10-16)
+
+A profile of generation with one thread (bend2-ml's fork measurements of 2026-10-16) showed `cap_pair` at 39% of the
+cycles of a short run: 0.1.7.0's `cap_depth` walks n steps to find an `Array`'s depth, and the loader asks it for every
+band. tensor-array 0.1.10.0 replaced it by doubling (`cap_dbl`); nothing else that llama.bend uses changed up to 0.1.12.0
+(0.1.11.0 chose the split depth from the work, 0.1.12.0 runs one-row products sequentially; generation runs `Bands` and
+neither path).
+
+Load ("weights loaded in"), 3 runs each, one thread on CPU 3 and 16 threads, 0.1.7.0 → 0.1.12.0:
+
+| model | one thread | 16 threads |
+|---|---|---|
+| SmolLM2-135M | 0.71 → 0.40 s | 0.68 → 0.46 s |
+| SmolLM2-360M | 2.44-2.56 → 1.25-1.31 s | 1.92-1.99 → 1.33-1.40 s |
+| SmolLM2-1.7B | 10.9-11.0 → 4.52-4.57 s | 8.07-8.31 → 4.52-4.63 s |
+
+Per token, unchanged (360M, 20 tokens, 3 rounds on 0.1.11.0: 269-271 against 273-278 ms on one thread, 98-105 on 16).
+`make laws` (`--verdict` ALL PROOFS CHECK, both bad files rejected), `make check` 0 failures (the tokenizer, one layer,
+the forward and 12 prompts of generation against `transformers`), `make bits` 0 failures at 135M.
+
+## The one-thread regression without `Act`: code placement, not work (2026-10-16)
+
+With `perf` installed, SmolLM2-360M on one thread (CPU 3), 5 rounds: without `Act` 313.0 ms per token against 284.8,
+with 1.2% fewer instructions, cache and TLB misses within 3% (mostly fewer), and 6.6% more cycles. The hot loop (the dot
+product, 75-82% of the cycles) is the same 322 instructions in both binaries, 16 bytes apart. Rebuilt from the same C
+with `-falign-loops=64`, the gap falls from 4-6% to 2.1%, inside the rounds' spread. So the regression is where clang
+places the hot loop, not something the program does; the hypothesis above (lists freed mid-layer) is out. `forward_gen`
+keeps `Act` on one band, which costs nothing and happens to land the loop well with today's compiler. I reported the
+underlying effect upstream as bendlang/bend#1648.
+
+## 2026-10-17: bend-ml-llama 0.1.1.0
+
+The package on BendHub was still 0.1.0.0 (2026-10-13): v1.1.0 released `forward_gen` on GitHub without publishing it.
+Published `bend-ml-llama@0.1.1.0`, hash `0x8ff6f11df9bf3e5a1f5eaa324b7fef8f`, with `forward_gen`, `forward_pre` and
+`bend-ml-tensor-array@0.1.12.0` (`make laws` with `--verdict` first). From a clean folder, `demo/gen.bend` and
+`llama/load.bend` importing the published package generate the same 12 tokens as the local copy (135M, 16 threads). The
+READMEs import 0.1.1.0.

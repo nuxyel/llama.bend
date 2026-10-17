@@ -20,7 +20,7 @@
 
 import Base
 import bend-ml-tensor@0.1.2.0/main.bend as T
-import bend-ml-tensor-array@0.1.7.0/main.bend as TA
+import bend-ml-tensor-array@0.1.12.0/main.bend as TA
 
 # =====================================================================================================
 # Arithmetic lemmas (used by the laws below)
@@ -969,6 +969,23 @@ def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t
   match m:
     case Model{+d, emb, ls, +lnf}:
       forward.go(Nat.is_eq(d, 0n), c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
+
+# a prompt position, whose logits nobody reads: the layers and the caches as forward_gen gives them, without the final
+# norm and the product by the embedding (vocab x dim, the largest of a position), so lg and nf are empty
+def pre_of(-c: Cfg, -cap: Nat, -t: Nat, +d: Nat, emb: TA.Bands<Cfg.vocab(c), Cfg.dim(c)>, +lnf: List<&2, F32>, r: Run<c, cap, t>) -> Out<c, cap, t>:
+  match r:
+    case Run{x, ls, cs, acts}:
+      Out{Nil{}, Nil{}, acts, cs, Model{d, emb, ls, lnf}}
+
+def forward_pre.go(+c: Cfg, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +d: Nat, ls: List<&1, LW<c>>, +lnf: List<&2, F32>, cs: List<&1, KV<cap, t>>, r: TA.BRow<Cfg.vocab(c), Cfg.dim(c)>) -> Out<c, cap, t>:
+  match r:
+    case TA.BRow{emb, row}:
+      pre_of(c, cap, t, d, emb, lnf, layers(Nat.is_eq(d, 0n), c, d, cap, t, room, rot_at(c, t), ls, cs, row))
+
+def forward_pre(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
+  match m:
+    case Model{+d, emb, ls, +lnf}:
+      forward_pre.go(c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
 
 # n empty caches, one per layer, each with room for cap positions
 def caches(+c: Cfg, n: Nat, +cap: Nat) -> List<&1, KV<cap, 0n>>:
