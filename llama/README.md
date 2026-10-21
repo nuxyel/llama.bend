@@ -11,13 +11,13 @@ PyTorch: all three models give the same greedy tokens as `transformers` in the
 - Bend: **2.0.37** · License: MIT · Depends on `bend-ml-tensor-array@0.1.14.0`.
 - `bend llama/main.bend --verdict` → `ALL PROOFS CHECK` (no `@unsafe`, no `?TODO`, no axioms).
 
-On BendHub as `bend-ml-llama@0.1.1.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
+On BendHub as `bend-ml-llama@0.2.0.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
 programs in `demo/` do with `../llama/main.bend`).
 
 ```python
 import Base
 import bend-ml-tensor-array@0.1.14.0/main.bend as TA
-import bend-ml-llama@0.1.1.0/main.bend as M
+import bend-ml-llama@0.2.0.0/main.bend as M
 
 # one position: token tok at position t, with the caches of positions 0..t-1 (one per layer) and room for cap
 # positions; room is the proof that t < cap (M.step_room gives it to a loop that keeps t + steps left = cap)
