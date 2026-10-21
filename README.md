@@ -18,7 +18,8 @@ past its room, that the weights cover the checkpoint) are laws that Bend's kerne
 `bend-ml-llama`; it builds on [bend-ml](https://github.com/nuxyel/bend-ml).
 
 llama.bend is models and inference: loading the weights, the forward pass, the KV cache, the tokenizer and generation.
-Training them is out of its scope; it belongs to a separate training library, which is not released yet.
+Training them is out of its scope: that is [BendTorch](https://github.com/nuxyel/bendtorch)'s, which fine-tunes
+SmolLM2-135M and 360M against PyTorch in Bend 2.
 
 <p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.0: 21 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
 
