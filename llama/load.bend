@@ -10,7 +10,7 @@
 # imports it. That is why it is a file of its own: main.bend, which holds the laws, does not import it
 # and keeps its own loader in plain Bend, which this one must match bit for bit (make bits).
 import Base
-import bend-ml-tensor-array@0.1.12.0/main.bend as TA
+import bend-ml-tensor-array@0.1.14.0/main.bend as TA
 import bend-ml-binary-read@0.1.0.0/main.bend as R
 import ./main.bend as M
 

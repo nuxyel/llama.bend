@@ -17,6 +17,10 @@ type, computed from that config, so a weight in the wrong place does not compile
 past its room, that the weights cover the checkpoint) are laws that Bend's kernel checks. The package is on BendHub as
 `bend-ml-llama`; it builds on [bend-ml](https://github.com/nuxyel/bend-ml).
 
+llama.bend is models and inference: loading the weights, the forward pass, the KV cache, the tokenizer and generation.
+Training them is out of its scope: that is [BendTorch](https://github.com/nuxyel/bendtorch)'s, which fine-tunes
+SmolLM2-135M and 360M against PyTorch in Bend 2.
+
 <p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.0: 21 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
 
 ## 01 · A weight in the wrong place is a type error
@@ -113,12 +117,16 @@ The other models are one variable away: `make prep check MODEL=smollm2-360m`, or
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
-import bend-ml-llama@0.1.1.0/main.bend as M
+import bend-ml-llama@0.2.0.0/main.bend as M
 ```
 
 `make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
 generates 128 tokens on the 135M, fails if they differ from `transformers`' (`bench/`), and prints one line
 (`ms_per_token=... load_s=... tokens=128 ok`). `MODEL=` and `THREADS=` pick the model and the thread count.
+
+`make bench-gpu` runs the same check on `demo/gen_gpu.bend`, whose matrix · vector products run on the GPU through
+bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.2.1` on BendHub). It needs CUDA (`CUDA_HOME`); `GPU=off` runs the
+same program with its GPU calls on the CPU threads. It gives the same tokens and logit bits, and it is slower (section 06).
 
 `make media` regenerates the figures on this page from real runs (needs node, ffmpeg and Brave). CI runs `make check`
 on every push. `main` holds the released versions; work in progress lives on `devel`.
@@ -132,7 +140,11 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   weight products, and still loading: 9.1 s to load the 1.7B and generate one token (66 s before the loader moved to
   `bend-ml-binary-read`, 2026-10-16), against 4.1 s for `transformers` and 0.5 s for llama.cpp. Peak memory 6.9 GB at 16 threads, 8.4 GB
   on one.
-- CPU only; base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
+- **The GPU path is slower than the CPU** (idle machine, 2026-10-18, [`NOTES.md`](NOTES.md)). With the products on an RTX
+  4050 Laptop, the 135M takes 193 ms per token against 61.5 on 16 CPU threads, the 360M 264 against 110: every product is
+  a GPU call with a fixed cost of about 1 ms, and generation has one vector a token to amortize it over. The 1.7B does
+  not fit in the card's 6 GB; with `--gpu 12GB` it runs oversubscribed at 1.6 s per token (one run, busy machine).
+- Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
   in their type, and the numerics are tested, never proved.
 
 ## Where things are
@@ -140,7 +152,8 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 | Path | What |
 |---|---|
 | [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`); the fast loader the demos use (`load.bend`) |
-| [`demo/`](demo/) | `gen.bend` (generation), `forward.bend` and `layer_test.bend` (what the tests read), the tokenizer |
+| [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
+| [`demo/`](demo/) | `gen.bend` (generation), `gen_gpu.bend` (the same on the GPU), `forward.bend` and `layer_test.bend` (what the tests read), the tokenizer |
 | [`tests/`](tests/) | programs that must not compile |
 | [`reference/`](reference/) | download and preparation, the `transformers` and `tokenizers` oracles, the tests |
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |

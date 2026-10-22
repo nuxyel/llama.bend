@@ -11,6 +11,8 @@
 #   scripts/bench.sh                 SmolLM2-135M, 128 tokens, all threads (needs `make prep`)
 #   MODEL=smollm2-360m THREADS=1 scripts/bench.sh
 #   BEND=/path/to/bend scripts/bench.sh
+#   GPU=1 scripts/bench.sh           demo/gen_gpu.bend instead (products on the GPU); needs CUDA_HOME (`make bench-gpu`)
+#   GPU=off scripts/bench.sh         demo/gen_gpu.bend with its bangs on the CPU threads (`--gpu off`)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 MODEL=${MODEL:-smollm2-135m}
@@ -24,8 +26,17 @@ want=$(grep -v '^#' "$EXP")
 n=$(echo "$want" | wc -w)
 mkdir -p .scratch
 export BEND_NO_TELEMETRY=1
-"$BEND" demo/gen.bend -o .scratch/bench-gen > .scratch/bench-build.log 2>&1 || { cat .scratch/bench-build.log; echo "build failed"; exit 2; }
-out=$(.scratch/bench-gen ${THREADS:+--threads $THREADS} "$DIR" "Once upon a time" "$n") || { echo "run failed"; exit 2; }
+DEMO=gen RUNARGS=()
+if [ -n "${GPU:-}" ]; then
+  DEMO=gen_gpu
+  [ "$GPU" = off ] && RUNARGS=(--gpu off)
+  [ "$GPU" = off ] || [ -n "${CUDA_HOME:-}" ] || { echo "GPU=1 needs CUDA_HOME (or GPU=off for the CPU threads)"; exit 2; }
+  [ -z "${CUDA_HOME:-}" ] || export LD_LIBRARY_PATH=$CUDA_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+fi
+rm -f .scratch/bench-$DEMO.gpu
+"$BEND" demo/$DEMO.bend -o .scratch/bench-$DEMO > .scratch/bench-build.log 2>&1 || { cat .scratch/bench-build.log; echo "build failed"; exit 2; }
+[ "${GPU:-off}" = off ] || [ -f .scratch/bench-$DEMO.gpu ] || { cat .scratch/bench-build.log; echo "no device code built (CUDA_HOME=$CUDA_HOME)"; exit 2; }
+out=$(.scratch/bench-$DEMO "${RUNARGS[@]}" ${THREADS:+--threads $THREADS} "$DIR" "Once upon a time" "$n") || { echo "run failed"; exit 2; }
 got=$(echo "$out" | awk '/^  id /{printf "%s ", $2}' | sed 's/ $//')
 line=$(echo "$out" | awk -v n="$n" '
   /^weights loaded in / { sub(/s$/, "", $4); load = $4 }

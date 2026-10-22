@@ -6,7 +6,7 @@ DIR := data/$(MODEL)
 export PATH := $(HOME)/.bend/bin:$(HOME)/.elan/bin:$(PATH)
 PY := reference/.venv/bin/python
 
-.PHONY: setup prep laws check bits bench media
+.PHONY: setup prep laws check bits bench bench-gpu media lint
 
 setup:            ## install the pinned Bend and Lean if missing, create the Python venv
 	scripts/setup.sh
@@ -17,6 +17,7 @@ prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135
 laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected; main.bend free of foreign code
 	! grep -n "@unsafe\|?TODO" llama/*.bend demo/*.bend tests/*.bend
 	! grep -n "binary-read" llama/main.bend
+	! grep -n "tensor-gpu\|gpu.bend" llama/main.bend llama/load.bend tests/*.bend
 	bend llama/main.bend
 	bend llama/main.bend --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK"
 	for f in tests/bad_*.bend; do bend $$f 2>&1 | grep -q "^- expected" && echo "rejected as it must be: $$f" || { echo "COMPILED, but must not: $$f"; exit 1; }; done
@@ -46,5 +47,11 @@ bits:             ## forward and gen give the same bits as the saved ones ($(DIR
 bench:            ## one line: ms per token by the program's own clock, failing if the tokens differ from transformers'
 	scripts/bench.sh
 
+bench-gpu:        ## make bench with the products on the GPU (demo/gen_gpu.bend, needs CUDA_HOME); GPU=off: its bangs on the CPU
+	GPU=$${GPU:-1} scripts/bench.sh
+
 media:            ## regenerate the README images from docs/media/outputs/ and numbers.json (needs node, ffmpeg, Brave)
 	scripts/make_media.sh
+
+lint:             ## bend-lint's performance rules over the Bend code: a report, not a gate; measure a finding before taking it
+	bunx bend-lint --jobs max

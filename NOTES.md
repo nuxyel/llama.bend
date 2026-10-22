@@ -798,3 +798,118 @@ Published `bend-ml-llama@0.1.1.0`, hash `0x8ff6f11df9bf3e5a1f5eaa324b7fef8f`, wi
 `bend-ml-tensor-array@0.1.12.0` (`make laws` with `--verdict` first). From a clean folder, `demo/gen.bend` and
 `llama/load.bend` importing the published package generate the same 12 tokens as the local copy (135M, 16 threads). The
 READMEs import 0.1.1.0.
+
+## 2026-10-17: v1.2.0
+
+tensor-array 0.1.12.0 (loading 1.7-2.4x faster), `forward_pre` and `bend-ml-llama@0.1.1.0` on BendHub, released through
+pull request #8 (CI green).
+
+## 2026-10-17: bend-lint on every change since its last pass
+
+bend-lint is a dev dependency now (`package.json`, `bend-lint.json` with the 12 performance rules, `make lint`), run
+before each release, a finding measured before it is taken. Its last pass was on `54e4a06` (2026-10-13). On the 5 Bend
+files changed since, 11 findings, none taken: `unused_result` on `lg`, `nf` and `acts` in `gen`'s loop (`forward_pre`
+returns them empty; `nf` is one 576-number list per token), `eager_branch` on `ids_ok` and `repeated_call` on `lcl` in
+the tokenizer, `append_in_loop` on `group_att`/`seq_att` and `deep_call_in_fork` on `seq_att` (the four he applied and
+measured as no change on 2026-10-16).
+
+## 2026-10-17: bend-lint's attention findings measured at a long context
+
+`append_in_loop` in `group_att`/`seq_att` with the fix (outputs reversed onto an accumulator, one reverse at the end),
+SmolLM2-135M, a 1,190-token prompt, 8 tokens, 16 threads, 3 rounds alternated: first token 79.7-79.9 s against 79.8-80.6
+s, 93-99 ms per token in both, the same tokens. The appends run over a layer's query heads, not over the context. Not
+taken; the findings carry a `bend-lint: disable-next` directive with the reason, so `make lint` is clean (0 findings, 4
+suppressed).
+
+## 2026-10-18: generation with the products on the GPU (preliminary)
+
+bend-ml-tensor-gpu 0.1.0.0 (bend-ml, not on BendHub yet; a byte-exact copy in `vendor/`) runs tensor-array's products as
+one `!` call (a bang) each, on the GPU, with tensor-array's bits. `llama/gpu.bend` is the forward pass for generation
+(`forward_gen`, `forward_pre`, `block_gen`'s layer) with every matrix · vector product through `TG.matmul_nt(1n, ...)`;
+`demo/gen_gpu.bend` is `demo/gen.bend` on it, and `make bench-gpu` (or `GPU=1 scripts/bench.sh`, `GPU=off` for `--gpu
+off`) checks its tokens. Like `load.bend`, it stays out of `main.bend`: `make laws` now also checks that `main.bend`,
+`load.bend` and `tests/` do not import tensor-gpu.
+
+Correctness. SmolLM2-135M and 360M: the 128 tokens of `make bench` equal transformers' on the GPU build and with
+`--gpu off` (`bench/expected-smollm2-360m.txt` is new, from `reference/bench_ref.py`). The 12 prompts of `gen.json`
+give the same output as `demo/gen`, logit bits included: at 135M against `make bits`'s saved files (0 failures, GPU and
+`--gpu off`), at 360M against `demo/gen` run beside it (no saved bits for the 360M).
+
+Two things I found on the way:
+
+- With the host's attention in parallel (d = 4 on 16 threads) only 48 of a run's 4,007 products reached the device
+  (nsys): a bang that follows parallel lets in the same evaluation runs on the CPU threads (Bend's SHADERS guide). The
+  GPU path runs attention's heads one after another (d = 0), and then all of them do.
+- A bang costs about 1 ms whatever its size (median 1.05 ms for the 576 x 960 product, nsys), so the products that read
+  the same vector are stacked into one: q, k and v in one matrix of dim + 2·kvw rows, gate and up in one of 2·ffn rows,
+  copied at load time. Four bangs a layer instead of seven (121 a token on the 135M instead of 211). Each row is still
+  its own dot product, so the bits do not change.
+
+Speed, preliminary (other work was running, load average 2-5): RTX 4050 Laptop (6 GB, driver 615.78.08), NVRTC 12.9, Bend 2.0.37, 128
+tokens from "Once upon a time", ms per token by the program's own clock, 3 alternated rounds, all within 2%:
+
+| model | CPU path, 16 threads | GPU path | GPU path, 7 bangs a layer | GPU path `--gpu off` |
+|---|---|---|---|---|
+| 135M | 61.1-62.8 | 193.2-193.6 | 310.9-311.9 | 71.9-72.1 |
+| 360M | 109.4-110.9 | 263.8-264.8 | 377.2-379.5 | 156.5-158.8 |
+
+The GPU path is 3.1x slower on the 135M and 2.4x on the 360M. Where a 135M token goes (nsys, 16 tokens): about 130 ms
+in its 121 bangs (1.05 ms each; the 49,152-row logits product about 4 ms) and about 80 ms on the host between them, of
+which the layer's own work is some 25-30 ms (the products are 75-82% of a one-thread token) and the rest is managed
+memory: 11,700 host page faults and 6,400 device page faults a token, about 12 MB moved to the device and 9 MB back. The input vector is
+written on the host and read by the device, the result the other way, and the host's allocator reuses blocks the device
+touched. The weights stay on the device after the first token. Each product also runs 1 row of a 4 x 4 tile and leaves
+most lanes idle (144 leaves for a 576-row product). The fixed cost is the package's; batching rows (the prompt's
+positions as one product) is what would amortize it, and generation has one row a token.
+
+SmolLM2-1.7B (6.8 GB of F32 weights, more than the card's 6 GB): with the default span the program stops ("out of
+memory: run again with a bigger span, as in --gpu 8GB"); with `--gpu 12GB` it runs oversubscribed, 4 tokens with the CPU
+path's ids and logit bits, 1.58 s a token (the CPU path: 0.25 s), 7.5 GB peak host memory. Tried once, not pursued.
+
+bend-ml-tensor-gpu 0.1.0.0 is on BendHub (2026-10-18): `llama/gpu.bend` imports it from there and `vendor/` is gone.
+
+## bend-ml-tensor-array 0.1.14.0 and bend-ml-tensor-gpu 0.1.2.1 (2026-10-18)
+
+- The imports moved from tensor-array 0.1.12.0 and tensor-gpu 0.1.0.0 to the current versions (0.1.13.0's `cap_depth`
+  compares natively; 0.1.14.0 adds an opt-in precise product that llama.bend does not use; tensor-gpu 0.1.1.x adds bangs
+  over any leaf code and 0.1.2.x the precise product). `make check` and `make bits` pass with the same bits; generation
+  with the products on the GPU (`GPU=1 scripts/bench.sh`, busy machine): 195.7 ms a token, the tokens transformers'. The
+  published `bend-ml-llama` keeps the old pins until its next release.
+
+## The GPU path on an idle machine (2026-10-18)
+
+The preliminary GPU numbers above, measured again in BendTorch's final idle round (commit 0059746, bend-ml-tensor-gpu
+0.1.2.1, driver 615.78.08): 128 tokens from "Once upon a time", ms per token by the program's clock, medians of 5
+alternated rounds, the tokens checked against `transformers` in every run.
+
+| model | CPU path, 16 threads | GPU path |
+|---|---|---|
+| 135M | 61.5 (61.1-62.2) | 193.0 (192.6-193.3) |
+| 360M | 110.2 (109.6-111.6) | 263.7 (262.4-264.6) |
+
+The same as on the busy machine, within 1%: the GPU path is 3.1x slower on the 135M and 2.4x on the 360M. The README
+now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single busy-machine run.
+
+## Off bend-ml-tensor (2026-10-19)
+
+- bend-ml-tensor is frozen (bend-ml NOTES, 2026-10-19), so llama.bend no longer imports it. Its five list helpers
+  (`zip_with.add`, `zip_with.mul`, `scale.l`, `sum.go`, `softmax.l`, with softmax's own helpers) are now `list.add`,
+  `list.mul`, `list.scale`, `list.sum.go` and `list.softmax` in `llama/main.bend`, copied with the same bodies (checked
+  mechanically against the package's source: only the names differ), so every operation runs in the same order.
+  `llama/gpu.bend` uses them through `M.`.
+- Same bits: `make laws`, `make check` and `make bits` (135M, 23 files identical); built before and after, the forward
+  pass and generation on the CPU, and generation on the GPU and with `--gpu off`, byte for byte identical at 135M and
+  360M (tokens and logit bits, 11 forward and 12 generation prompts); the 1.7B on the CPU, 2 prompts of 12 tokens,
+  identical. `make bench-gpu` (135M, 360M, GPU and `--gpu off`) and `make bench` give transformers' tokens. The device
+  code is byte for byte the same.
+- The saved bits now exist for all three models (2026-10-19): `bits.py save` for 360M and 1.7B (23 files each, in the
+  local `data/<model>/test/bits/`, the 1.7B under the heavy-run lock), then `bits.py check` identical, so `make bits
+  MODEL=smollm2-360m` and `MODEL=smollm2-1.7b` work like the 135M's.
+
+## bend-ml-llama 0.2.0.0 (2026-10-21)
+
+- Published `bend-ml-llama@0.2.0.0`, hash `0x7ac61588953ec1faa925002b4f879bcf`, from `llama/main.bend` (it imports
+  `bend-ml-tensor-array@0.1.14.0` only; `gpu.bend` and `load.bend` stay in the repository). The minor version moves
+  because the package no longer imports bend-ml-tensor and its list helpers are its own (`list.*`, above).
+- From a clean folder, `demo/gen.bend` and `llama/load.bend` importing the published package pass `reference/test_gen.py`
+  (135M, every prompt: the same ids and text as transformers). The READMEs import 0.2.0.0.

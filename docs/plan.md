@@ -89,14 +89,17 @@ API; phase C publishes it.
    parallel. Pass: a per-token cost that does not grow with the position over 128 and 512 tokens on the three models,
    the same tokens as transformers. **Done 2026-10-12**: slope 0.00-0.18 ms per position over 512 tokens (15-20 before),
    the 1.7B 4.0x faster at 16 threads. The capacity is proved as `kv_room` (2026-10-12): a position below `cap` is
-   written inside the arrays; the type does not carry `cap`, so a caller can still write past it.
+   written inside the arrays. Since 2026-10-13 the type carries it too (`KV<cap, t>`): `KV.push` takes a proof that
+   `t < cap`, so a write past the capacity does not compile (`tests/bad_cap.bend`).
 
 **Phase C: publish**
 
 9. **Package and measurements**: `bend-ml-llama@0.1.0.0` (one file, `LICENSE`, the laws in the README);
    `BENCHMARK.md` per rule 7 (idle, `taskset -c 3`, 1 and 16 threads, load time and resident peak against
-   PyTorch); CI modeled on bend-ml's.
-10. **Public**: the repository goes public, bend-ml's README links it, a post answering the wishlist line.
+   PyTorch); CI modeled on bend-ml's. **Done 2026-10-13**: `bend-ml-llama@0.1.0.0` on BendHub (0.1.1.0 since),
+   `BENCHMARK.md` against transformers, llama.cpp and candle, CI (NOTES).
+10. **Public**: the repository goes public, bend-ml's README links it, a post answering the wishlist line. **Done
+    2026-10-13**: v1.0.0, the repository public, the launch posts (NOTES).
 11. **Bridge to a training framework**: `docs/bendtorch.md`, for each op what its backward pass needs from the
     activations record and what the affine rules made hard. A document, no code. **Done 2026-10-12**: `docs/bendtorch.md`, every operation's
     backward pass checked against `torch.autograd` (RMSNorm, SwiGLU, softmax).

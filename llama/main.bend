@@ -19,8 +19,7 @@
 # few ulps and the argmax exactly (llama.bend's NOTES.md).
 
 import Base
-import bend-ml-tensor@0.1.2.0/main.bend as T
-import bend-ml-tensor-array@0.1.12.0/main.bend as TA
+import bend-ml-tensor-array@0.1.14.0/main.bend as TA
 
 # =====================================================================================================
 # Arithmetic lemmas (used by the laws below)
@@ -282,6 +281,78 @@ def head_split(xs, half):
 # The numeric pieces (tested against transformers, never proved: F32 is not a real number)
 # =====================================================================================================
 
+# ---- lists of F32: copied from bend-ml-tensor 0.1.2.0 (same author, MIT), each operation in the same order ----
+
+# xs + ys, element by element (to the shorter length)
+def list.add(xs: List<&2, F32>, ys: List<&2, F32>) -> List<&2, F32>:
+  match xs ys:
+    case Con{+h, t} Con{+g, u}:
+      (h + g : F32) <> list.add(t, u)
+    case _ _:
+      Nil{}
+
+# xs * ys, element by element (to the shorter length)
+def list.mul(xs: List<&2, F32>, ys: List<&2, F32>) -> List<&2, F32>:
+  match xs ys:
+    case Con{+h, t} Con{+g, u}:
+      (h * g : F32) <> list.mul(t, u)
+    case _ _:
+      Nil{}
+
+# k * xs
+def list.scale(+k: F32, xs: List<&2, F32>) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+h, t}:
+      (k * h : F32) <> list.scale(k, t)
+
+# acc + xs, a running sum from the left
+def list.sum.go(xs: List<&2, F32>, acc: F32) -> F32:
+  match xs:
+    case Nil{}:
+      acc
+    case Con{+h, t}:
+      list.sum.go(t, (acc + h : F32))
+
+def list.max.go(xs: List<&2, F32>, cur: F32) -> F32:
+  match xs:
+    case Nil{}:
+      cur
+    case Con{+h, t}:
+      list.max.go(t, F32.max(cur, h))
+
+# the maximum of xs (0 for an empty list)
+def list.max(xs: List<&2, F32>) -> F32:
+  match xs:
+    case Nil{}:
+      0.0
+    case Con{+h, t}:
+      list.max.go(t, h)
+
+# exp(x - m) for each x
+def list.exp_shift(xs: List<&2, F32>, +m: F32) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+h, t}:
+      F32.exp((h - m : F32)) <> list.exp_shift(t, m)
+
+# xs / s
+def list.div(xs: List<&2, F32>, +s: F32) -> List<&2, F32>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+h, t}:
+      (h / s : F32) <> list.div(t, s)
+
+def list.softmax.fin(+es: List<&2, F32>) -> List<&2, F32>:
+  list.div(es, list.sum.go(es, 0.0))
+
+# stable softmax: subtracts the maximum before exponentiating
+def list.softmax(+xs: List<&2, F32>) -> List<&2, F32>:
+  list.softmax.fin(list.exp_shift(xs, list.max(xs)))
+
 # the squares of xs
 def squares(xs: List<&2, F32>) -> List<&2, F32>:
   match xs:
@@ -307,13 +378,13 @@ def tree_sum(fuel: Nat, xs: List<&2, F32>) -> F32:
     case _ Con{+a, Nil{}}:
       a
     case 0n Con{+a, t}:
-      T.sum.go(t, a)
+      list.sum.go(t, a)
     case 1n+p Con{+a, t}:
       tree_sum(p, pair_sums(Con{a, t}))
 
 # RMSNorm: g * (x * (1 / sqrt(mean(x²) + eps))), in this order (LlamaRMSNorm.forward)
 def rmsnorm(+c: Cfg, +x: List<&2, F32>, +g: List<&2, F32>) -> List<&2, F32>:
-  T.zip_with.mul(g, T.scale.l((1.0 / F32.sqrt(((tree_sum(Cfg.dim(c), squares(x)) / F32.from_nat(Cfg.dim(c)) : F32) + Cfg.eps(c) : F32)) : F32), x))
+  list.mul(g, list.scale((1.0 / F32.sqrt(((tree_sum(Cfg.dim(c), squares(x)) / F32.from_nat(Cfg.dim(c)) : F32) + Cfg.eps(c) : F32)) : F32), x))
 
 # inv_freq[i] = 1 / (theta ^ (2i / head)), i = 0..half-1 (LlamaRotaryEmbedding, default rope)
 def inv_freq.go(n: Nat, +i: Nat, +theta: F32, +hd: F32) -> List<&2, F32>:
@@ -489,8 +560,8 @@ def leb_mul(a: Nat, b: Nat, +h: Nat, e: {True{} == TA.leb(a, b) : Bool}) -> {Tru
 # LAW (kv_room): KV.empty(c, cap) gives each key/value head arrays of 2^cap_depth(cap·head) slots, and KV.push at
 # position t writes head numbers from t·head. For a position below the capacity (t < cap) they all fall inside the
 # slots: (1 + t)·head <= 2^cap_depth(cap·head), so a push never wraps around onto position 0. (What stays trusted is
-# tensor-array's: Array.new allocates 2^d slots.) The type does not stop a caller from pushing at t >= cap; the
-# callers size cap to the positions they run.
+# tensor-array's: Array.new allocates 2^d slots.) KV.push takes a proof that t < cap, so a push at t >= cap does not
+# compile (tests/bad_cap.bend).
 law kv_room:
   for +cap: Nat
   for +h: Nat
@@ -707,7 +778,7 @@ def head_wr(k: Array<F32>, wr: WR) -> HO:
 def head_sr(+hd: Nat, +t: Nat, +scale: F32, v: Array<F32>, sr: SR) -> HO:
   match sr:
     case SR{k, s}:
-      head_wr(k, weighted(hd, t, v, T.softmax.l(T.scale.l(scale, s))))
+      head_wr(k, weighted(hd, t, v, list.softmax(list.scale(scale, s))))
 
 def head_att(+hd: Nat, +t: Nat, +scale: F32, k: Array<F32>, v: Array<F32>, +q: List<&2, F32>) -> HO:
   head_sr(hd, t, scale, v, scores(hd, t, k, q))
@@ -719,6 +790,7 @@ def group_att(hs: List<&2, Head>, +hd: Nat, +t: Nat, +scale: F32, k: Array<F32>,
       HO{k, v, acc}
     case Con{h, rest}:
       HO.then(HO, head_att(hd, t, scale, k, v, join(h)), k2 => v2 => +o =>
+        # bend-lint: disable-next bend-lint-rules/performance/append_in_loop -- the loop runs over one group of query heads (at most 15 of 64 numbers) not-expected-because: measured 2026-10-17 with a 1,190-token prompt: no change (NOTES)
         group_att(rest, hd, t, scale, k2, v2, List.append(&2, F32, acc, o)))
 
 # every group, in order: the outputs of query heads 0, 1, ..., and the caches handed back
@@ -748,6 +820,7 @@ def seq_att(ws: List<&1, GW>, +hd: Nat, +t: Nat, +scale: F32, aks: List<&1, Arra
       match w:
         case GW{g, k, v}:
           HO.then(AT, group_att(g, hd, t, scale, k, v, Nil{}), k2 => v2 => +o =>
+            # bend-lint: disable-next bend-lint-rules/performance/append_in_loop -- the loop runs over the key/value heads of a layer, not the context not-expected-because: measured 2026-10-17 with a 1,190-token prompt: no change (NOTES)
             seq_att(wt, hd, t, scale, k2 <> aks, v2 <> avs, List.append(&2, F32, acc, o)))
     case Nil{}:
       AT{List.reverse(&1, Array<F32>, aks), List.reverse(&1, Array<F32>, avs), acc}
@@ -784,6 +857,7 @@ def halvings(fuel: Nat, +n: Nat) -> Nat:
 def par_att(d: Nat, gs: GS, +n: Nat, +hd: Nat, +t: Nat, +scale: F32) -> AT:
   match d gs:
     case 0n GS{l, r}:
+      # bend-lint: disable-next bend-lint-rules/performance/deep_call_in_fork -- seq_att runs a handful of groups per leaf not-expected-because: its tail-loop rewrite measured as no change (2026-10-16, NOTES)
       p q = seq_att(l, hd, t, scale, Nil{}, Nil{}, Nil{}) seq_att(r, hd, t, scale, Nil{}, Nil{}, Nil{})
       at_join(p, q)
     case 1n++e GS{l, r}:
@@ -862,12 +936,12 @@ def block(+c: Cfg, +d: Nat, lw: LW<c>, -cap: Nat, +t: Nat, kv: KV<cap, t>, -room
             +ks = ropes(rt, heads(Cfg.kv(c), Cfg.half(c), k))
             KA.then(BR<c, cap, t>, cap, 1n+t, attention(c, d, cap, t, qs, KV.push(c, cap, t, kv, room, joins(ks), chunks(Cfg.kv(c), Cfg.head(c), v))), kv2 => +at =>
             mv(BR<c, cap, t>, Cfg.dim(c), Cfg.dim(c), wo, at, wo => +a =>
-              +x1 = T.zip_with.add(x, a)
+              +x1 = list.add(x, a)
               +n2 = rmsnorm(c, x1, ln2)
               mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wg, n2, wg => +g =>
                 mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wu, n2, wu => +u =>
                   mv(BR<c, cap, t>, Cfg.dim(c), Cfg.ffn(c), wd, swiglu(g, u), wd => +m =>
-                    +y = T.zip_with.add(x1, m)
+                    +y = list.add(x1, m)
                     BR{y, kv2, LW{ln1, wq, wk, wv, wo, ln2, wg, wu, wd}, Act{n1, q, k, v, flat(qs), flat(ks), at, a, n2, m, y}}))))))))
 
 # block for generation: the same computation, with the activations left empty. Generation never reads them, and
@@ -885,12 +959,12 @@ def block_gen(+c: Cfg, +d: Nat, lw: LW<c>, -cap: Nat, +t: Nat, kv: KV<cap, t>, -
             +ks = ropes(rt, heads(Cfg.kv(c), Cfg.half(c), k))
             KA.then(BR<c, cap, t>, cap, 1n+t, attention(c, d, cap, t, qs, KV.push(c, cap, t, kv, room, joins(ks), chunks(Cfg.kv(c), Cfg.head(c), v))), kv2 => +at =>
             mv(BR<c, cap, t>, Cfg.dim(c), Cfg.dim(c), wo, at, wo => +a =>
-              +x1 = T.zip_with.add(x, a)
+              +x1 = list.add(x, a)
               +n2 = rmsnorm(c, x1, ln2)
               mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wg, n2, wg => +g =>
                 mv(BR<c, cap, t>, Cfg.ffn(c), Cfg.dim(c), wu, n2, wu => +u =>
                   mv(BR<c, cap, t>, Cfg.dim(c), Cfg.ffn(c), wd, swiglu(g, u), wd => +m =>
-                    +y = T.zip_with.add(x1, m)
+                    +y = list.add(x1, m)
                     BR{y, kv2, LW{ln1, wq, wk, wv, wo, ln2, wg, wu, wd}, Act{Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}, Nil{}}}))))))))
 
 # keep: block with the activations (the tests read them), or block_gen without them; chosen before anything is computed
