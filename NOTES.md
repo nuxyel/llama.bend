@@ -905,3 +905,11 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
 - The saved bits now exist for all three models (2026-10-19): `bits.py save` for 360M and 1.7B (23 files each, in the
   local `data/<model>/test/bits/`, the 1.7B under the heavy-run lock), then `bits.py check` identical, so `make bits
   MODEL=smollm2-360m` and `MODEL=smollm2-1.7b` work like the 135M's.
+
+## bend-ml-llama 0.2.0.0 (2026-10-21)
+
+- Published `bend-ml-llama@0.2.0.0`, hash `0x7ac61588953ec1faa925002b4f879bcf`, from `llama/main.bend` (it imports
+  `bend-ml-tensor-array@0.1.14.0` only; `gpu.bend` and `load.bend` stay in the repository). The minor version moves
+  because the package no longer imports bend-ml-tensor and its list helpers are its own (`list.*`, above).
+- From a clean folder, `demo/gen.bend` and `llama/load.bend` importing the published package pass `reference/test_gen.py`
+  (135M, every prompt: the same ids and text as transformers). The READMEs import 0.2.0.0.
