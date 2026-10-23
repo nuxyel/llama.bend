@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/nuxyel/llama.bend/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nuxyel/llama.bend/ci.yml?branch=main&style=flat-square&label=ci&labelColor=4d4a44&color=7e9a5e" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-8b83b5?style=flat-square&labelColor=4d4a44" alt="MIT license"></a>
-  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.37-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.37"></a>
+  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.38-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.38"></a>
   <img src="https://img.shields.io/badge/laws%20proved-21-7e9a5e?style=flat-square&labelColor=4d4a44" alt="21 laws proved">
 </p>
 
@@ -107,7 +107,7 @@ of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.9 GB for the mo
 
 ```bash
 git clone https://github.com/nuxyel/llama.bend.git && cd llama.bend
-make setup   # Bend 2.0.37 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
+make setup   # Bend 2.0.38 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
 make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checked
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
@@ -164,6 +164,6 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 While building bend-ml I found that a parallel let became sequential when its def's last parameter was erased
 ([bendlang/bend#1374](https://github.com/bendlang/bend/issues/1374)). My fix,
-[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37, the version this project runs on.
+[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.38.
 
 <p align="center"><sub>MIT · Renan Vinícius (@nuxyel) · the visual identity is bend-ml's, in Bend's own colours · the launch video (v1.0): <a href="https://github.com/nuxyel/llama.bend/releases/download/v1.0.0/llama.bend.mp4">llama.bend.mp4</a></sub></p>
