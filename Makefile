@@ -15,6 +15,8 @@ prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135
 	$(PY) reference/prep.py
 
 laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected; main.bend free of foreign code
+	$(PY) scripts/check_rts.py --self-test
+	$(PY) scripts/check_rts.py
 	! grep -n "@unsafe\|?TODO" llama/*.bend demo/*.bend tests/*.bend
 	! grep -n "binary-read" llama/main.bend
 	! grep -n "tensor-gpu\|gpu.bend" llama/main.bend llama/load.bend tests/*.bend
