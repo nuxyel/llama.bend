@@ -64,6 +64,9 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
 
 ## Bend 2.0.38 pitfalls (paid for in bend-ml)
 
+- A compiled program's runtime options go between `+RTS` and `-RTS` (since 2.0.38): `./x +RTS --threads 16 -RTS`, or
+  `BENDRTS="--threads 1"` in the environment. A bare `./x --threads 16` passes `--threads 16` to the program and runs on
+  the default thread count with no error, so a thread-count test silently tests nothing. `--gpu` goes in the same bracket.
 - `match` only inspects a parameter or a pattern variable; a computed value (including a destructuring
   `let` of a call) needs its own def or a parameter computed by the caller. Matching several parameters at
   once (`match b small:`) is the way to branch on a computed `Bool` and a value together.
@@ -75,8 +78,8 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
   has the left-hand side there; use `Equal.sym` to go the other way. `Nat.sub(1n+p, 1n)` does not reduce to
   `p` in the checker: pass `p` itself.
 - Parallel lets (`a b = f(..) g(..)`) suffer from non-tail recursive helpers in the fork tree (use tail
-  loops with an accumulator). Check scaling with `--threads 1` against `--threads 16`, and read the emitted
-  C (`bend X.bend -o x.c`): the joins of each parallel let are there. (Up to 2.0.36 they silently became
+  loops with an accumulator). Check scaling with `+RTS --threads 1` against `+RTS --threads 16`, and read the emitted
+  C (`bend X.bend -o x.c`): the joins of each parallel let are there (lower-case names since 2.0.38, `..._j75`). (Up to 2.0.36 they silently became
   sequential when the def's last parameter was erased; fixed in 2.0.37 by bendlang/bend#1377.)
 - `IO.fork` gives concurrency, not parallelism (by design, bendlang/bend#1415). Use parallel lets in pure
   code for several cores.
