@@ -45,7 +45,7 @@ def scan(root, files, rules):
     for f in files:
         if not (f.endswith(TEXT) or os.path.basename(f) == "Makefile"):
             continue
-        if os.path.basename(f) in ("check_rts.py", "rts-allow.txt"):  # this check and its exceptions name the bare form
+        if os.path.basename(f) in ("check_rts.py", "rts_probe.py", "rts-allow.txt"):  # the guards name the bare form
             continue
         try:
             lines = open(os.path.join(root, f), encoding="utf-8").read().splitlines()
