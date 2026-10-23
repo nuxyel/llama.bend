@@ -2,7 +2,7 @@
 # arguments, the same output and, since the products give tensor-array's bits, the same tokens and logits.
 #
 #   gen_gpu <dir> "prompt" n          (built with CUDA: `bend demo/gen_gpu.bend -o x` writes x and x.gpu)
-#   gen_gpu --gpu off <dir> "prompt" n   (the same bangs on the CPU threads)
+#   gen_gpu +RTS --gpu off -RTS <dir> "prompt" n   (the same bangs on the CPU threads)
 #
 # make bench-gpu checks its tokens against transformers'.
 

@@ -7,7 +7,7 @@
 #   G.forward_gen(c, cap, t, model, cs, room, tok)     # as M.forward_gen, with G.Out for M.Out
 #
 # A product is TG.matmul_nt(1n, k, r, ...): one `!` call (a bang), which runs on the GPU when the program is built with
-# CUDA and on the CPU threads with `--gpu off`. tensor-gpu gives Mat.matmul_nt's bits, and a single band of
+# CUDA and on the CPU threads with `+RTS --gpu off -RTS`. tensor-gpu gives Mat.matmul_nt's bits, and a single band of
 # TA.Bands.matvec_l computes what Mat.matmul_nt computes for one row, so the logits and the tokens are main.bend's, bit
 # for bit (make bench-gpu checks the tokens). Each bang has a fixed cost of about a millisecond, so the products that
 # read the same vector are one product here: q, k and v are one matrix of dim + 2·kvw rows, gate and up one of 2·ffn
