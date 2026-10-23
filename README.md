@@ -143,7 +143,7 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 - **The GPU path is slower than the CPU** (idle machine, 2026-10-18, [`NOTES.md`](NOTES.md)). With the products on an RTX
   4050 Laptop, the 135M takes 193 ms per token against 61.5 on 16 CPU threads, the 360M 264 against 110: every product is
   a GPU call with a fixed cost of about 1 ms, and generation has one vector a token to amortize it over. The 1.7B does
-  not fit in the card's 6 GB; with `--gpu 12GB` it runs oversubscribed at 1.6 s per token (one run, busy machine).
+  not fit in the card's 6 GB; with `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.6 s per token (one run, busy machine).
 - Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
   in their type, and the numerics are tested, never proved.
 
