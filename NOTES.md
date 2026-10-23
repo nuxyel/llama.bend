@@ -931,3 +931,22 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   on mains power (bend2-lab's harness, `smol135` block; medians and interquartile ranges, ms per token): one thread 115.4
   (114.5-118.0) on 2.0.37 against 113.4 (113.2-113.4) on 2.0.38; 16 threads 57.7 (57.3-58.1) against 58.6 (57.9-58.7).
   At most 2% either way, with the same tokens: no change worth a new `BENCHMARK.md`, which stays dated (Bend 2.0.37).
+
+## Guards for the runtime options (2026-10-23)
+
+- Since Bend 2.0.38 a runtime option written outside `+RTS ... -RTS` is not an error: the program gets it as an argument
+  and runs on the default thread count, so a 1-and-16-thread check passes while testing nothing. After fixing about 60
+  such calls by hand across the projects, I added three guards:
+  1. `scripts/check_rts.py`, run by the checks (and CI): it fails on any tracked line with `--threads` or `--gpu` left
+     once the `+RTS ... -RTS` spans are taken out, except the lines in `rts-allow.txt`, each with its reason (the log,
+     other programs' own `--threads`). `--self-test` shows it finds a bare option and passes a bracketed one; a bare
+     `--threads` planted in a Makefile fails the checks.
+  2. Test programs that take no arguments refuse any, with exit 2 and a message that names `+RTS` (`IO.args()` holds the
+     program's name only, on C and on JavaScript; the runtime takes `+RTS ... -RTS` out first). The checks run one with a
+     bare `--threads 16` and require the refusal.
+  3. `scripts/rts_probe.py`: a parallel program run with `+RTS --threads 1 -RTS` must use at most 1.5 cores, and with
+     `--threads 16` several. Local only: CI sets `SKIP_RTS_PROBE=1`, and it skips itself under 8 cores. With a wrapper
+     that drops the bracket (a runtime that ignores it), one thread used 10.1 cores and the probe failed, as it should.
+  On this repository: no test program needed the refusal (every one it runs reads arguments and breaks on an extra one);
+  the probe runs 24 tokens of the 135M's generation, 1.00 and 6.2-6.3 cores; `scripts/bench.sh` keeps the bare form for
+  a Bend before 2.0.38, an exception with its reason.
