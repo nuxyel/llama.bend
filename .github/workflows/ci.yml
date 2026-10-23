@@ -36,7 +36,7 @@ jobs:
           path: data/smollm2-135m/hf
           key: hf-smollm2-135m-${{ hashFiles('reference/models.py') }}
 
-      - name: Set up (Bend 2.0.37, Lean 4.34.0, Python venv)
+      - name: Set up (Bend 2.0.38, Lean 4.34.0, Python venv)
         run: make setup
 
       - name: Prepare SmolLM2-135M
