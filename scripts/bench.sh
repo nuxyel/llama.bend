@@ -12,7 +12,7 @@
 #   MODEL=smollm2-360m THREADS=1 scripts/bench.sh
 #   BEND=/path/to/bend scripts/bench.sh
 #   GPU=1 scripts/bench.sh           demo/gen_gpu.bend instead (products on the GPU); needs CUDA_HOME (`make bench-gpu`)
-#   GPU=off scripts/bench.sh         demo/gen_gpu.bend with its bangs on the CPU threads (`--gpu off`)
+#   GPU=off scripts/bench.sh         demo/gen_gpu.bend with its bangs on the CPU threads (`+RTS --gpu off -RTS`)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 MODEL=${MODEL:-smollm2-135m}
@@ -36,7 +36,11 @@ fi
 rm -f .scratch/bench-$DEMO.gpu
 "$BEND" demo/$DEMO.bend -o .scratch/bench-$DEMO > .scratch/bench-build.log 2>&1 || { cat .scratch/bench-build.log; echo "build failed"; exit 2; }
 [ "${GPU:-off}" = off ] || [ -f .scratch/bench-$DEMO.gpu ] || { cat .scratch/bench-build.log; echo "no device code built (CUDA_HOME=$CUDA_HOME)"; exit 2; }
-out=$(.scratch/bench-$DEMO "${RUNARGS[@]}" ${THREADS:+--threads $THREADS} "$DIR" "Once upon a time" "$n") || { echo "run failed"; exit 2; }
+RUNARGS+=(${THREADS:+--threads $THREADS})
+# from Bend 2.0.38 on, runtime options go between +RTS and -RTS (bendlang/bend#1530); before, they went bare
+v=$("$BEND" version | awk '{print $NF}')
+[ "${v##*.}" -lt 38 ] || [ ${#RUNARGS[@]} = 0 ] || RUNARGS=(+RTS "${RUNARGS[@]}" -RTS)
+out=$(.scratch/bench-$DEMO "${RUNARGS[@]}" "$DIR" "Once upon a time" "$n") || { echo "run failed"; exit 2; }
 got=$(echo "$out" | awk '/^  id /{printf "%s ", $2}' | sed 's/ $//')
 line=$(echo "$out" | awk -v n="$n" '
   /^weights loaded in / { sub(/s$/, "", $4); load = $4 }
