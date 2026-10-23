@@ -39,6 +39,7 @@ check: laws       ## the laws, prep, the Bend tokenizer against `tokenizers`; on
 	[ -f $(DIR)/test/gen.json ] || $(PY) reference/gen_ref.py
 	bend demo/gen.bend -o .scratch/gen
 	$(PY) reference/test_gen.py .scratch/gen
+	$(PY) scripts/rts_probe.py .scratch/gen $(DIR) "Once upon a time" 24
 
 bits:             ## forward and gen give the same bits as the saved ones ($(DIR)/test/bits/; `bits.py save` writes them)
 	mkdir -p .scratch
