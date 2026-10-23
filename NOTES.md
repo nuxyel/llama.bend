@@ -913,3 +913,19 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   because the package no longer imports bend-ml-tensor and its list helpers are its own (`list.*`, above).
 - From a clean folder, `demo/gen.bend` and `llama/load.bend` importing the published package pass `reference/test_gen.py`
   (135M, every prompt: the same ids and text as transformers). The READMEs import 0.2.0.0.
+
+## Bend 2.0.38 (2026-10-23)
+
+- `scripts/bump_bend.sh 2.0.38` moved the pin (the sums match the ones I computed for bend-ml). Its README patterns no
+  longer matched the badge and setup line as the README writes them now; they do again, and it rewrites CONTRIBUTING's
+  setup line too.
+- **Runtime options between `+RTS` and `-RTS`** (bendlang/bend#1530, breaking): `scripts/bench.sh` wraps `--threads` and
+  `--gpu` in the bracket when the `bend` that built the program is 2.0.38 or later, and passes them bare before, so
+  `bench_compare.sh` still compares an older Bend with a newer one. Both versions give the expected 128 tokens.
+- docs/release.md's steps with 2.0.38: `make laws` (`ALL PROOFS CHECK`, both bad programs rejected), `make check` on the
+  135M (0 failures), `make bits` (every output identical) and the same with one thread (`BENDRTS="--threads 1" make
+  bits`, the environment form of the new options), `reference/test_gen.py` on the 360M and the 1.7B (0 failures each),
+  and the emitted C still has `par_att`'s two joins (now `..._par_att_j75` and `_j78`, lower case).
+- No source changed, so `bend-ml-llama` is not republished.
+- Not yet measured: speed, the same commit with 2.0.37 and 2.0.38 (bend2-lab's harness has both binaries; it needs mains
+  power). `BENCHMARK.md` stays dated until then.
