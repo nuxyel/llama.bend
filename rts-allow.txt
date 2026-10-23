@@ -1,0 +1,6 @@
+# Lines scripts/check_rts.py accepts with --threads or --gpu outside +RTS ... -RTS: `<path glob>` or `<path glob>:<text>`.
+NOTES.md                                   # the log: how each run was made at the time
+docs/release.md                            # the dated checklist of Bend 2.0.37's release
+CLAUDE.md:A bare `./x --threads 16`        # the pitfall itself, explaining the bare form
+CLAUDE.md:`--gpu` goes in the same bracket # the same pitfall
+scripts/bench.sh:RUNARGS                   # builds the options, then brackets them when the bend is 2.0.38 or later
