@@ -74,7 +74,8 @@ def main():
     if "--self-test" in sys.argv:
         self_test()
         return
-    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True).stdout.strip()
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, cwd=here, check=True).stdout.strip()
     files = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=root, check=True).stdout.split("\n")
     found = scan(root, [f for f in files if f], load_rules(root))
     if found:
