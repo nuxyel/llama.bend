@@ -9,3 +9,5 @@ detected by `.github/workflows/bend-release.yml`, which opens an issue.
 | date | Bend | llama.bend | 1 thread | 16 threads | previous release, 1 / 16 | rounds |
 |---|---|---|---|---|---|---|
 | 2026-10-13 | 2.0.37 | 8775c40 | 123.2 | 79.1 | 2.0.36: 123.3 / 79.0 | 5 |
+| 2026-10-24 | 2.0.38 | e0de45a | 120.2 | 64.2 | 2.0.37: 121.5 / 62.1 | 5 |
+| 2026-10-24 | 2.0.39 | e0de45a | 116.4 | 60.5 | 2.0.38: 119.7 / 64.1 | 5 |
