@@ -969,3 +969,15 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   2.0.37 on 16 threads (the run of 2026-10-23 saw at most 2% either way, on a busier machine). Same tokens in every run.
   `BENCHMARK.md` stays dated.
 
+
+## Idle round on Bend 2.0.39 (2026-10-24)
+
+- **2.0.38 against 2.0.39, the same commit (aae14b4)**, the cross-system harness, idle machine, 5 alternated rounds:
+  the 135M takes 51.6 ms a token on 16 threads with 2.0.39 against 58.7 with 2.0.38 (ranges 51.0-54.4 and 58.3-58.9),
+  and 114.1 against 116.3 on one thread (110.4-116.1 and 115.1-118.5: they overlap). The same output with both.
+- **Hardware counters** (`perf stat`, 33 tokens, 3 alternated rounds, one thread): 2.0.39 runs 2.5% fewer instructions
+  (68.96 G against 70.73 G), 4.2% fewer cycles and about as many cache misses; on bend-ml's GPT-2 1.4% fewer
+  instructions and 7% fewer cycles. Most of the gain is more instructions per cycle, not less work.
+- **GPU** (the overnight kit, 128 tokens, 5 rounds): the 135M 178.9 ms a token (193.0 on 2026-10-18) against 60.5 on
+  16 CPU threads, the 360M 230.6 (263.7) against 107.3. Bend and the code both changed since 2026-10-18.
+- The README carries the 16-thread result and the GPU line.
