@@ -950,3 +950,16 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   On this repository: no test program needed the refusal (every one it runs reads arguments and breaks on an extra one);
   the probe runs 24 tokens of the 135M's generation, 1.00 and 6.2-6.3 cores; `scripts/bench.sh` keeps the bare form for
   a Bend before 2.0.38, an exception with its reason.
+
+## Bend 2.0.39 (2026-10-24)
+
+- **Pin.** `scripts/setup.sh` (version and both SHA256 sums), the CI step, the README badge, setup line and "runs on",
+  CONTRIBUTING, `llama/README.md` and CLAUDE.md. Nothing in the code changed.
+- **`bend --publish` sends only files inside the entry's directory** (#1836): `llama/` has plain files only and imports
+  nothing by `../`, so `bend-ml-llama` publishes as before.
+- docs/release.md's steps with 2.0.39: `make laws` (`ALL PROOFS CHECK`, both bad programs rejected), `make check` on the
+  135M (0 failures; the probe: 1.00 and 6.97 cores), `make bits` (every output identical) and the same with one thread
+  (`BENDRTS="--threads 1" make bits`), `reference/test_gen.py` on the 360M and the 1.7B (0 failures each), and the
+  emitted C still has `par_att`'s two joins (`..._par_att_j75` and `_j78`).
+- No source changed, so `bend-ml-llama` is not republished.
+
