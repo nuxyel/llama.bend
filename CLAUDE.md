@@ -44,7 +44,7 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
 
 ## Rules
 
-1. Bend is pinned to **2.0.38** (and Lean 4.34.0 for `--verdict`). Bend 2 changes fast and differs from
+1. Bend is pinned to **2.0.39** (and Lean 4.34.0 for `--verdict`). Bend 2 changes fast and differs from
    Bend 1: before writing code, read `bend guide`, `bend base <name>` and the Base source
    (`~/.bend/bend2/base.bend`). A version bump goes in `NOTES.md`.
 2. Run the checker on every change; it takes a fraction of a second.
@@ -62,7 +62,7 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
 9. Public text (READMEs, `NOTES.md`, `docs/`) is written in Renan's first person singular: "I measured",
    never "we"/"our". Where a name is needed: "Renan Vinícius (@nuxyel)". This file stays in the third person.
 
-## Bend 2.0.38 pitfalls (paid for in bend-ml)
+## Bend 2.0.39 pitfalls (paid for in bend-ml)
 
 - A compiled program's runtime options go between `+RTS` and `-RTS` (since 2.0.38): `./x +RTS --threads 16 -RTS`, or
   `BENDRTS="--threads 1"` in the environment. A bare `./x --threads 16` passes `--threads 16` to the program and runs on
