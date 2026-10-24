@@ -962,4 +962,10 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   (`BENDRTS="--threads 1" make bits`), `reference/test_gen.py` on the 360M and the 1.7B (0 failures each), and the
   emitted C still has `par_att`'s two joins (`..._par_att_j75` and `_j78`).
 - No source changed, so `bend-ml-llama` is not republished.
+- **`make bench` across the last three releases** (`scripts/bench_compare.sh`, idle machine on mains power, `performance`
+  profile, 5 alternated rounds each, the same commit `e0de45a`; `bench/history.md`): 2.0.37 against 2.0.38, 121.5 / 62.1
+  against 120.2 / 64.2 ms per token (1 / 16 threads); 2.0.38 against 2.0.39, 119.7 / 64.1 against 116.4 / 60.5. The
+  rounds do not overlap: 2.0.39 is about 3% faster on one thread and 6% on 16, and 2.0.38 was about 3% slower than
+  2.0.37 on 16 threads (the run of 2026-10-23 saw at most 2% either way, on a busier machine). Same tokens in every run.
+  `BENCHMARK.md` stays dated.
 
