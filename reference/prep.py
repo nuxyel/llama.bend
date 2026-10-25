@@ -4,6 +4,9 @@ smollm2-135m), downloaded at its pinned revision into data/<MODEL>/.
   reference/.venv/bin/python reference/prep.py          download (pinned revision) and write data/<MODEL>/
   reference/.venv/bin/python reference/prep.py --check  verify what is in data/<MODEL>/
   reference/.venv/bin/python reference/prep.py --index  write w/st.txt alone (a model prepared before it existed)
+  F32=0 reference/.venv/bin/python reference/prep.py    without the F32 copies (w/<name>.bin): enough for gen,
+                                                       forward and bench, which read hf/model.safetensors; make check
+                                                       needs them (main.bend's loader, layer_test)
 
 Writes to data/<MODEL>/:
   hf/            config.json, tokenizer.json, model.safetensors as downloaded
@@ -29,6 +32,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 import bpe_ref
 
 from models import REPO, REV, D, HF, W, config
+
+F32 = os.environ.get("F32", "1") != "0"  # write w/<name>.bin (main.bend's plain-Bend loader reads them)
 
 # the GPT-2 regex of the ByteLevel pre-tokenizer (use_regex = true)
 GPT2_PAT = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -187,20 +192,24 @@ def check():
     import torch
     ok = True
     c = config()
-    # 1. weights: bit for bit, shapes, total
+    # 1. weights: bit for bit, shapes, total (skipped with F32=0, when there are no copies)
     total = 0
+    if not F32:
+        print("weights: no F32 copies (F32=0); the loaders of gen, forward and bench read model.safetensors")
     with safe_open(os.path.join(HF, "model.safetensors"), "pt") as f:
-        for short, name, shape in weights(c):
+        for short, name, shape in (weights(c) if F32 else []):
             t = f.get_tensor(name)
             want = (t.view(torch.int16).numpy().astype(np.int32) & 0xFFFF) << 16  # bf16 bits << 16
-            got = np.fromfile(os.path.join(W, short + ".bin"), dtype="<u4")
+            path = os.path.join(W, short + ".bin")
+            got = np.fromfile(path, dtype="<u4") if os.path.exists(path) else np.zeros(0, "<u4")  # missing: FAILED
             same = got.size == int(np.prod(shape)) and np.array_equal(got, want.astype(np.uint32).ravel())
             ok &= same
             if not same:
                 print("MISMATCH", short)
             total += got.size
     n_tensors = len(weights(c))
-    print(f"weights: {n_tensors} files bit for bit = bf16 << 16: {'ok' if ok else 'FAILED'}; {total:,} numbers")
+    if F32:
+        print(f"weights: {n_tensors} files bit for bit = bf16 << 16: {'ok' if ok else 'FAILED'}; {total:,} numbers")
     path = os.path.join(W, "st.txt")
     st_ok = os.path.exists(path) and open(path).read() == st_index(c)
     print(f"w/st.txt: {n_tensors} BF16 offsets into model.safetensors: {'ok' if st_ok else 'FAILED (run prep --index)'}")
@@ -250,7 +259,9 @@ def main():
         return
     os.makedirs(D, exist_ok=True)
     download()
-    write_weights()
+    os.makedirs(W, exist_ok=True)
+    if F32:
+        write_weights()
     open(os.path.join(W, "st.txt"), "w").write(st_index(config()))
     open(os.path.join(D, "cfg.txt"), "w").write(cfg_line(config()))
     print("cfg.txt:", cfg_line(config()).strip())
