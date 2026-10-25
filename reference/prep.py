@@ -3,11 +3,16 @@ smollm2-135m), downloaded at its pinned revision into data/<MODEL>/.
 
   reference/.venv/bin/python reference/prep.py          download (pinned revision) and write data/<MODEL>/
   reference/.venv/bin/python reference/prep.py --check  verify what is in data/<MODEL>/
+  reference/.venv/bin/python reference/prep.py --index  write w/st.txt alone (a model prepared before it existed)
 
 Writes to data/<MODEL>/:
   hf/            config.json, tokenizer.json, model.safetensors as downloaded
   w/<name>.bin   one little-endian float32 file per tensor, row = output (the PyTorch Linear layout), the layout
-                 bend-ml's loader reads; names in WEIGHTS below
+                 main.bend's plain-Bend loader reads; names in WEIGHTS below
+  w/st.txt       where each tensor's BF16 data starts in hf/model.safetensors, one line per tensor in weights()
+                 order (the order the loaders walk: emb, then each layer's ln1 q k v o ln2 gate up down, then lnf):
+                 "<hi> <lo>", the byte offset hi * 2^32 + lo; load.bend and gpu.bend read the BF16 numbers from there
+                 (bend-ml-binary-read's read_bf16_at), widened exactly to the F32 numbers of w/<name>.bin
   merges_num.txt one BPE rule per line, "a b" in the bend-ml scheme (byte b -> b, the token of rule k -> 256 + k)
   ids.txt        the model id of every symbol of that scheme: 256 bytes, then one per rule; -1 for the 21 bytes
                  that have no token (0xC0, 0xC1, 0xF5-0xFF and six control bytes): `tokenizers` drops them
@@ -72,6 +77,23 @@ def weights(c):
         ]
     out.append(("lnf", "model.norm.weight", (h,)))
     return out
+
+
+def st_index(c):
+    """w/st.txt's lines, from model.safetensors' header: every tensor BF16 and of the shape weights() expects"""
+    import struct
+    with open(os.path.join(HF, "model.safetensors"), "rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
+        head = json.loads(f.read(n))
+    lines = []
+    for short, name, shape in weights(c):
+        t = head[name]
+        assert t["dtype"] == "BF16" and tuple(t["shape"]) == shape, (name, t["dtype"], t["shape"], shape)
+        a, b = t["data_offsets"]
+        assert b - a == 2 * int(np.prod(shape)), name
+        off = 8 + n + a
+        lines.append(f"{off >> 32} {off & 0xFFFFFFFF}\n")
+    return "".join(lines)
 
 
 def cfg_line(c):
@@ -179,6 +201,10 @@ def check():
             total += got.size
     n_tensors = len(weights(c))
     print(f"weights: {n_tensors} files bit for bit = bf16 << 16: {'ok' if ok else 'FAILED'}; {total:,} numbers")
+    path = os.path.join(W, "st.txt")
+    st_ok = os.path.exists(path) and open(path).read() == st_index(c)
+    print(f"w/st.txt: {n_tensors} BF16 offsets into model.safetensors: {'ok' if st_ok else 'FAILED (run prep --index)'}")
+    ok &= st_ok
     # 2. the config the Bend package reads
     want_cfg = cfg_line(c)
     path = os.path.join(D, "cfg.txt")
@@ -218,9 +244,14 @@ def check():
 def main():
     if "--check" in sys.argv:
         sys.exit(0 if check() else 1)
+    if "--index" in sys.argv:  # w/st.txt alone, for a model prepared before it existed
+        open(os.path.join(W, "st.txt"), "w").write(st_index(config()))
+        print("w/st.txt:", len(weights(config())), "offsets")
+        return
     os.makedirs(D, exist_ok=True)
     download()
     write_weights()
+    open(os.path.join(W, "st.txt"), "w").write(st_index(config()))
     open(os.path.join(D, "cfg.txt"), "w").write(cfg_line(config()))
     print("cfg.txt:", cfg_line(config()).strip())
     _, _, rep = tables()

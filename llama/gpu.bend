@@ -159,39 +159,38 @@ def put(-r: Nat, -c: Nat, -s: Nat, +rr: Nat, +cc: Nat, +at: Nat, m: TA.Mat<r, c>
     case TA.Mat{a} TA.Mat{d}:
       TA.Mat{copy(Nat.mul(rr, cc), 0, U32.from_nat(Nat.mul(at, cc)), d, Array.get(F32, a, 0))}
 
-# one weight file as one Mat (r x c), with the size check of main.bend's loader
-def get_mat(+dir: String, +name: String, +r: Nat, +c: Nat) -> IO(TA.Mat<r, c>):
-  do IO<TA.Mat<r, c>>:
-    M.check_size(M.wpath(dir, name), Nat.mul(r, c))
-    L.get_band(M.wpath(dir, name), r, r, c, 0n)
+# tensor t of w/st.txt as one Mat (r x c), read from hf/model.safetensors by load.bend
+def get_mat(+dir: String, +st: List<&2, U32>, +t: Nat, +r: Nat, +c: Nat) -> IO(TA.Mat<r, c>):
+  L.get_band(L.st_path(dir), L.st_hi(st, t), L.st_lo(st, t), r, r, c, 0n)
 
-def load_lw(+c: M.Cfg, +dir: String, +i: Nat) -> IO(LW<c>):
+def load_lw(+c: M.Cfg, +dir: String, +st: List<&2, U32>, +i: Nat) -> IO(LW<c>):
   do IO<LW<c>>:
-    ln1 : List<&2, F32> <- M.get_list(dir, M.nm(i, "ln1"), M.Cfg.dim(c))
-    q : TA.Mat<M.Cfg.dim(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "q"), M.Cfg.dim(c), M.Cfg.dim(c))
-    k : TA.Mat<M.Cfg.kvw(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "k"), M.Cfg.kvw(c), M.Cfg.dim(c))
-    v : TA.Mat<M.Cfg.kvw(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "v"), M.Cfg.kvw(c), M.Cfg.dim(c))
-    o : TA.Mat<M.Cfg.dim(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "o"), M.Cfg.dim(c), M.Cfg.dim(c))
-    ln2 : List<&2, F32> <- M.get_list(dir, M.nm(i, "ln2"), M.Cfg.dim(c))
-    gate : TA.Mat<M.Cfg.ffn(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "gate"), M.Cfg.ffn(c), M.Cfg.dim(c))
-    up : TA.Mat<M.Cfg.ffn(c), M.Cfg.dim(c)> <- get_mat(dir, M.nm(i, "up"), M.Cfg.ffn(c), M.Cfg.dim(c))
-    down : TA.Mat<M.Cfg.dim(c), M.Cfg.ffn(c)> <- get_mat(dir, M.nm(i, "down"), M.Cfg.dim(c), M.Cfg.ffn(c))
+    ln1 : List<&2, F32> <- L.get_norm(dir, st, L.t_layer(i, 0n), M.Cfg.dim(c))
+    q : TA.Mat<M.Cfg.dim(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 1n), M.Cfg.dim(c), M.Cfg.dim(c))
+    k : TA.Mat<M.Cfg.kvw(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 2n), M.Cfg.kvw(c), M.Cfg.dim(c))
+    v : TA.Mat<M.Cfg.kvw(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 3n), M.Cfg.kvw(c), M.Cfg.dim(c))
+    o : TA.Mat<M.Cfg.dim(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 4n), M.Cfg.dim(c), M.Cfg.dim(c))
+    ln2 : List<&2, F32> <- L.get_norm(dir, st, L.t_layer(i, 5n), M.Cfg.dim(c))
+    gate : TA.Mat<M.Cfg.ffn(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 6n), M.Cfg.ffn(c), M.Cfg.dim(c))
+    up : TA.Mat<M.Cfg.ffn(c), M.Cfg.dim(c)> <- get_mat(dir, st, L.t_layer(i, 7n), M.Cfg.ffn(c), M.Cfg.dim(c))
+    down : TA.Mat<M.Cfg.dim(c), M.Cfg.ffn(c)> <- get_mat(dir, st, L.t_layer(i, 8n), M.Cfg.dim(c), M.Cfg.ffn(c))
     wqkv : TA.Mat<qkv(c), M.Cfg.dim(c)> = put(M.Cfg.kvw(c), M.Cfg.dim(c), qkv(c), M.Cfg.kvw(c), M.Cfg.dim(c), Nat.add(M.Cfg.dim(c), M.Cfg.kvw(c)), v, put(M.Cfg.kvw(c), M.Cfg.dim(c), qkv(c), M.Cfg.kvw(c), M.Cfg.dim(c), M.Cfg.dim(c), k, put(M.Cfg.dim(c), M.Cfg.dim(c), qkv(c), M.Cfg.dim(c), M.Cfg.dim(c), 0n, q, TA.Mat.zeros(qkv(c), M.Cfg.dim(c)))))
     wgu : TA.Mat<gu(c), M.Cfg.dim(c)> = put(M.Cfg.ffn(c), M.Cfg.dim(c), gu(c), M.Cfg.ffn(c), M.Cfg.dim(c), M.Cfg.ffn(c), up, put(M.Cfg.ffn(c), M.Cfg.dim(c), gu(c), M.Cfg.ffn(c), M.Cfg.dim(c), 0n, gate, TA.Mat.zeros(gu(c), M.Cfg.dim(c))))
     return LW{ln1, wqkv, o, ln2, wgu, down}
 
-def load_layers(k: Nat, +c: M.Cfg, +dir: String, +i: Nat, acc: List<&1, LW<c>>) -> IO(List<&1, LW<c>>):
+def load_layers(k: Nat, +c: M.Cfg, +dir: String, +st: List<&2, U32>, +i: Nat, acc: List<&1, LW<c>>) -> IO(List<&1, LW<c>>):
   match k:
     case 0n:
       IO.pure(List<&1, LW<c>>, List.reverse(&1, LW<c>, acc))
     case 1n+p:
       do IO<List<&1, LW<c>>>:
-        l : LW<c> <- load_lw(c, dir, i)
-        load_layers(p, c, dir, 1n+i, l <> acc)
+        l : LW<c> <- load_lw(c, dir, st, i)
+        load_layers(p, c, dir, st, 1n+i, l <> acc)
 
 def load_model(+c: M.Cfg, +dir: String) -> IO(Model<c>):
   do IO<Model<c>>:
-    emb : TA.Mat<M.Cfg.vocab(c), M.Cfg.dim(c)> <- get_mat(dir, "emb", M.Cfg.vocab(c), M.Cfg.dim(c))
-    ls : List<&1, LW<c>> <- load_layers(M.Cfg.layers(c), c, dir, 0n, Nil{})
-    lnf : List<&2, F32> <- M.get_list(dir, "lnf", M.Cfg.dim(c))
+    +st : List<&2, U32> <- L.read_st(dir, M.Cfg.layers(c))
+    emb : TA.Mat<M.Cfg.vocab(c), M.Cfg.dim(c)> <- get_mat(dir, st, 0n, M.Cfg.vocab(c), M.Cfg.dim(c))
+    ls : List<&1, LW<c>> <- load_layers(M.Cfg.layers(c), c, dir, st, 0n, Nil{})
+    lnf : List<&2, F32> <- L.get_norm(dir, st, L.t_layer(M.Cfg.layers(c), 0n), M.Cfg.dim(c))
     return Model{emb, ls, lnf}
