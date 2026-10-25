@@ -981,3 +981,17 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
 - **GPU** (the overnight kit, 128 tokens, 5 rounds): the 135M 178.9 ms a token (193.0 on 2026-10-18) against 60.5 on
   16 CPU threads, the 360M 230.6 (263.7) against 107.3. Bend and the code both changed since 2026-10-18.
 - The README carries the 16-thread result and the GPU line.
+
+## The fast loaders read hf/model.safetensors (2026-10-25)
+
+- `load.bend` (the demos' loader) and `gpu.bend` read every tensor from the downloaded `hf/model.safetensors` with
+  `bend-ml-binary-read@0.2.0.0`'s `read_bf16_at`, each BF16 number widened exactly to F32, instead of `w/<name>.bin`'s
+  F32 copies. `reference/prep.py` writes `w/st.txt`: each tensor's byte offset, as two U32s (hi, lo), in the order the
+  loaders walk; `prep.py --check` verifies it, and `prep.py --index` writes it for a model prepared before.
+  `main.bend`'s plain-Bend loader still reads the F32 files (`layer_test`, and `prep --check` compares them).
+- The numbers are the same, so the outputs are: `make bits` identical on 135M and 360M (forward and generation),
+  `make check` passes, the 1.7B continues "The capital of France is" with " Paris" as before, and the GPU path gives
+  the CPU's 12 tokens on 360M.
+- Speed and memory: loading the 1.7B took 4.55 s against 4.60 s, peak 6.9 GB either way (busy machine, 2 rounds, the
+  files in the page cache). Half the bytes are read, but filling the arrays is the cost. What changes is that
+  generation no longer needs the 6.4 GB of F32 copies for the 1.7B; `make prep` still writes them for main.bend.
