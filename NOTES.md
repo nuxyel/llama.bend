@@ -995,3 +995,6 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
 - Speed and memory: loading the 1.7B took 4.55 s against 4.60 s, peak 6.9 GB either way (busy machine, 2 rounds, the
   files in the page cache). Half the bytes are read, but filling the arrays is the cost. What changes is that
   generation no longer needs the 6.4 GB of F32 copies for the 1.7B; `make prep` still writes them for main.bend.
+- `make prep F32=0` skips the F32 copies, for generation only (1.7B: 6.4 GB less on disk): `prep --check` then skips
+  their comparison, and a missing copy otherwise fails the check (it used to stop with a traceback). Tested on 135M with
+  `w/*.bin` moved away: `prep --check` with F32=0 passes, `gen` gives the same text, and without F32=0 the check fails.

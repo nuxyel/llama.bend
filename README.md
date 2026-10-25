@@ -118,6 +118,8 @@ bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 
 ```
 
 The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
+`make prep F32=0` skips the F32 copies of the weights: generation reads the downloaded `model.safetensors` itself,
+so that is enough to run `gen` (6.4 GB less for the 1.7B), but not `make check`, whose plain-Bend loader reads them.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
