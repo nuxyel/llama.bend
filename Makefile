@@ -11,7 +11,7 @@ PY := reference/.venv/bin/python
 setup:            ## install the pinned Bend and Lean if missing, create the Python venv
 	scripts/setup.sh
 
-prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, 540 MB written)
+prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, 540 MB written); F32=0: without the F32 copies, enough to generate (1.7B: 6.4 GB less), not for make check
 	$(PY) reference/prep.py
 
 laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected; main.bend free of foreign code

@@ -22,7 +22,7 @@ and pull request myself. Bug reports, numbers from other machines, fixes and new
 ## Setup and checks
 
 ```bash
-make setup   # the pinned Bend 2.0.38, Lean 4.34.0 and the Python venv of reference/
+make setup   # the pinned Bend 2.0.39, Lean 4.34.0 and the Python venv of reference/
 make prep    # SmolLM2-135M into data/smollm2-135m/ (not committed)
 make laws    # the proofs, by bend and again by --verdict; tests/bad_*.bend must be rejected
 make check   # the laws, then the tokenizer, one layer, the forward pass and generation against transformers

@@ -950,3 +950,51 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   On this repository: no test program needed the refusal (every one it runs reads arguments and breaks on an extra one);
   the probe runs 24 tokens of the 135M's generation, 1.00 and 6.2-6.3 cores; `scripts/bench.sh` keeps the bare form for
   a Bend before 2.0.38, an exception with its reason.
+
+## Bend 2.0.39 (2026-10-24)
+
+- **Pin.** `scripts/setup.sh` (version and both SHA256 sums), the CI step, the README badge, setup line and "runs on",
+  CONTRIBUTING, `llama/README.md` and CLAUDE.md. Nothing in the code changed.
+- **`bend --publish` sends only files inside the entry's directory** (#1836): `llama/` has plain files only and imports
+  nothing by `../`, so `bend-ml-llama` publishes as before.
+- docs/release.md's steps with 2.0.39: `make laws` (`ALL PROOFS CHECK`, both bad programs rejected), `make check` on the
+  135M (0 failures; the probe: 1.00 and 6.97 cores), `make bits` (every output identical) and the same with one thread
+  (`BENDRTS="--threads 1" make bits`), `reference/test_gen.py` on the 360M and the 1.7B (0 failures each), and the
+  emitted C still has `par_att`'s two joins (`..._par_att_j75` and `_j78`).
+- No source changed, so `bend-ml-llama` is not republished.
+- **`make bench` across the last three releases** (`scripts/bench_compare.sh`, idle machine on mains power, `performance`
+  profile, 5 alternated rounds each, the same commit `e0de45a`; `bench/history.md`): 2.0.37 against 2.0.38, 121.5 / 62.1
+  against 120.2 / 64.2 ms per token (1 / 16 threads); 2.0.38 against 2.0.39, 119.7 / 64.1 against 116.4 / 60.5. The
+  rounds do not overlap: 2.0.39 is about 3% faster on one thread and 6% on 16, and 2.0.38 was about 3% slower than
+  2.0.37 on 16 threads (the run of 2026-10-23 saw at most 2% either way, on a busier machine). Same tokens in every run.
+  `BENCHMARK.md` stays dated.
+
+
+## Idle round on Bend 2.0.39 (2026-10-24)
+
+- **2.0.38 against 2.0.39, the same commit (aae14b4)**, the cross-system harness, idle machine, 5 alternated rounds:
+  the 135M takes 51.6 ms a token on 16 threads with 2.0.39 against 58.7 with 2.0.38 (ranges 51.0-54.4 and 58.3-58.9),
+  and 114.1 against 116.3 on one thread (110.4-116.1 and 115.1-118.5: they overlap). The same output with both.
+- **Hardware counters** (`perf stat`, 33 tokens, 3 alternated rounds, one thread): 2.0.39 runs 2.5% fewer instructions
+  (68.96 G against 70.73 G), 4.2% fewer cycles and about as many cache misses; on bend-ml's GPT-2 1.4% fewer
+  instructions and 7% fewer cycles. Most of the gain is more instructions per cycle, not less work.
+- **GPU** (the overnight kit, 128 tokens, 5 rounds): the 135M 178.9 ms a token (193.0 on 2026-10-18) against 60.5 on
+  16 CPU threads, the 360M 230.6 (263.7) against 107.3. Bend and the code both changed since 2026-10-18.
+- The README carries the 16-thread result and the GPU line.
+
+## The fast loaders read hf/model.safetensors (2026-10-25)
+
+- `load.bend` (the demos' loader) and `gpu.bend` read every tensor from the downloaded `hf/model.safetensors` with
+  `bend-ml-binary-read@0.2.0.0`'s `read_bf16_at`, each BF16 number widened exactly to F32, instead of `w/<name>.bin`'s
+  F32 copies. `reference/prep.py` writes `w/st.txt`: each tensor's byte offset, as two U32s (hi, lo), in the order the
+  loaders walk; `prep.py --check` verifies it, and `prep.py --index` writes it for a model prepared before.
+  `main.bend`'s plain-Bend loader still reads the F32 files (`layer_test`, and `prep --check` compares them).
+- The numbers are the same, so the outputs are: `make bits` identical on 135M and 360M (forward and generation),
+  `make check` passes, the 1.7B continues "The capital of France is" with " Paris" as before, and the GPU path gives
+  the CPU's 12 tokens on 360M.
+- Speed and memory: loading the 1.7B took 4.55 s against 4.60 s, peak 6.9 GB either way (busy machine, 2 rounds, the
+  files in the page cache). Half the bytes are read, but filling the arrays is the cost. What changes is that
+  generation no longer needs the 6.4 GB of F32 copies for the 1.7B; `make prep` still writes them for main.bend.
+- `make prep F32=0` skips the F32 copies, for generation only (1.7B: 6.4 GB less on disk): `prep --check` then skips
+  their comparison, and a missing copy otherwise fails the check (it used to stop with a traceback). Tested on 135M with
+  `w/*.bin` moved away: `prep --check` with F32=0 passes, `gen` gives the same text, and without F32=0 the check fails.

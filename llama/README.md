@@ -8,7 +8,7 @@ structure is proved by Bend's checker and again by its kernel proved in Lean. Th
 PyTorch: all three models give the same greedy tokens as `transformers` in the
 [llama.bend](https://github.com/nuxyel/llama.bend) repository.
 
-- Bend: **2.0.38** · License: MIT · Depends on `bend-ml-tensor-array@0.1.14.0`.
+- Bend: **2.0.39** · License: MIT · Depends on `bend-ml-tensor-array@0.1.14.0`.
 - `bend llama/main.bend --verdict` → `ALL PROOFS CHECK` (no `@unsafe`, no `?TODO`, no axioms).
 
 On BendHub as `bend-ml-llama@0.2.0.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
@@ -74,7 +74,7 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
 | `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model written by `prep.py` (`<dir>/w/<name>.bin`, little-endian F32, one file per tensor) |
-| `load.bend`: `load_model` | the same model, with each band of weights read straight into its array by `bend-ml-binary-read` (the 1.7B in about 8 s instead of 60-70). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean, and `make bits` checks that both loaders give the same outputs |
+| `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (BF16 widened exactly to F32, at the offsets `prep.py` writes into `w/st.txt`; the 1.7B in about 8 s instead of 60-70). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean, and `make bits` checks that both loaders give the same outputs |
 
 An `Array` has a single owner, so every product hands its matrix back (`block` returns its `LW`, `forward` its
 `Model`). `Act` holds every intermediate of a layer (`n1`, `q`, `k`, `v`, `qr`, `kr`, `attn`, `a`, `n2`, `m`,

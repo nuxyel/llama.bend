@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/nuxyel/llama.bend/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nuxyel/llama.bend/ci.yml?branch=main&style=flat-square&label=ci&labelColor=4d4a44&color=7e9a5e" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-8b83b5?style=flat-square&labelColor=4d4a44" alt="MIT license"></a>
-  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.38-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.38"></a>
+  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.39-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.39"></a>
   <img src="https://img.shields.io/badge/laws%20proved-21-7e9a5e?style=flat-square&labelColor=4d4a44" alt="21 laws proved">
 </p>
 
@@ -100,6 +100,10 @@ Bend 2.0.37 brings my fix for parallel code with an erased last parameter and a 
 idle threads. Built with 2.0.36 and with 2.0.37, the same commit runs at the same speed: no def here had the shape that
 the fix is about, and the parallel heads gain nothing more on this machine.
 
+Bend 2.0.39 is faster than 2.0.38 on the same commit. On the 135M, idle machine, 5 alternated rounds (2026-10-24), a
+token takes 51.6 ms on 16 threads against 58.7, and 114 ms on one thread against 116, inside the spread. The program
+runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds).
+
 ## 05 · Reproduce
 
 Linux x86_64 (or WSL), clang, Python 3.14 (the version the pinned dependencies were tested with), `curl`. About 2 GB
@@ -107,13 +111,15 @@ of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.9 GB for the mo
 
 ```bash
 git clone https://github.com/nuxyel/llama.bend.git && cd llama.bend
-make setup   # Bend 2.0.38 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
+make setup   # Bend 2.0.39 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
 make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checked
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
 ```
 
 The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
+`make prep F32=0` skips the F32 copies of the weights: generation reads the downloaded `model.safetensors` itself,
+so that is enough to run `gen` (6.4 GB less for the 1.7B), but not `make check`, whose plain-Bend loader reads them.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
@@ -140,8 +146,8 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   weight products, and still loading: 9.1 s to load the 1.7B and generate one token (66 s before the loader moved to
   `bend-ml-binary-read`, 2026-10-16), against 4.1 s for `transformers` and 0.5 s for llama.cpp. Peak memory 6.9 GB at 16 threads, 8.4 GB
   on one.
-- **The GPU path is slower than the CPU** (idle machine, 2026-10-18, [`NOTES.md`](NOTES.md)). With the products on an RTX
-  4050 Laptop, the 135M takes 193 ms per token against 61.5 on 16 CPU threads, the 360M 264 against 110: every product is
+- **The GPU path is slower than the CPU** (idle machine, 2026-10-24, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
+  4050 Laptop, the 135M takes 179 ms per token against 60.5 on 16 CPU threads, the 360M 231 against 107: every product is
   a GPU call with a fixed cost of about 1 ms, and generation has one vector a token to amortize it over. The 1.7B does
   not fit in the card's 6 GB; with `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.6 s per token (one run, busy machine).
 - Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
@@ -164,6 +170,6 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 While building bend-ml I found that a parallel let became sequential when its def's last parameter was erased
 ([bendlang/bend#1374](https://github.com/bendlang/bend/issues/1374)). My fix,
-[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.38.
+[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.39.
 
 <p align="center"><sub>MIT · Renan Vinícius (@nuxyel) · the visual identity is bend-ml's, in Bend's own colours · the launch video (v1.0): <a href="https://github.com/nuxyel/llama.bend/releases/download/v1.0.0/llama.bend.mp4">llama.bend.mp4</a></sub></p>
