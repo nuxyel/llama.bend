@@ -928,7 +928,7 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   and the emitted C still has `par_att`'s two joins (now `..._par_att_j75` and `_j78`, lower case).
 - No source changed, so `bend-ml-llama` is not republished.
 - **Speed, the same commit (`108020e`) built with 2.0.37 and 2.0.38**, SmolLM2-135M, 5 alternated rounds in one session
-  on mains power (bend2-lab's harness, `smol135` block; medians and interquartile ranges, ms per token): one thread 115.4
+  on mains power (my measurement harness, `smol135` block; medians and interquartile ranges, ms per token): one thread 115.4
   (114.5-118.0) on 2.0.37 against 113.4 (113.2-113.4) on 2.0.38; 16 threads 57.7 (57.3-58.1) against 58.6 (57.9-58.7).
   At most 2% either way, with the same tokens: no change worth a new `BENCHMARK.md`, which stays dated (Bend 2.0.37).
 
