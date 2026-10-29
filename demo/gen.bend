@@ -103,11 +103,13 @@ def start2(+c: M.Cfg, model: M.Model<c>, +table: List<&2, BPE.Rule>, +perm: List
         gen : List<&2, Nat> <- loop(Nat.add(List.length(&2, Nat, ids), n), c, t0ms, Nat.add(List.length(&2, Nat, ids), n), 0n, {==}, t0, qt, n, Nil{}, model, M.caches(c, M.Cfg.layers(c), Nat.add(List.length(&2, Nat, ids), n)))
         IO.print("text: " ++ K.decode_text(table, perm, List.append(&2, Nat, ids, gen)))
 
-def generate(+c: M.Cfg, model: M.Model<c>, +mb: List<&2, U32>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
-  start2(c, model, K.rules.go(K.nums(mb), 0n), K.nums(pb), K.encode_text(K.rules.go(K.nums(mb), 0n), K.nums(pb), utf8_of(String.to_list(prompt))), n)
+def generate(+c: M.Cfg, model: M.Model<c>, +ns: List<&2, Nat>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
+  +table = K.rules.go(ns, 0n)
+  +perm = K.nums(pb)
+  start2(c, model, table, perm, K.encode_text(table, perm, utf8_of(String.to_list(prompt))), n)
 
 # refuse to run on a malformed merges table (checked before the weights are loaded)
-def run3(ok: Bool, +dir: String, +mb: List<&2, U32>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
+def run3(ok: Bool, +dir: String, +ns: List<&2, Nat>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
   match ok:
     case True{}:
       do IO<Unit>:
@@ -116,12 +118,14 @@ def run3(ok: Bool, +dir: String, +mb: List<&2, U32>, +pb: List<&2, U32>, prompt:
         model : M.Model<c> <- L.load_model(c, dir)
         t1 : Nat <- IO.now()
         IO.print("weights loaded in " ++ tsec(t1, t0))
-        generate(c, model, mb, pb, prompt, n)
+        generate(c, model, ns, pb, prompt, n)
     case False{}:
       IO.print("invalid merges table")
 
 def run2(+dir: String, +mb: List<&2, U32>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
-  run3(K.ids_ok(K.nums(mb), 0n), dir, mb, pb, prompt, n)
+  # the merges table is parsed once, for this check and for the rules, which are built once for encoding and decoding
+  +ns = K.nums(mb)
+  run3(K.ids_ok(ns, 0n), dir, ns, pb, prompt, n)
 
 def run1(+dir: String, prompt: String, mn: Maybe<&2, Nat>) -> IO(Unit):
   match mn:
