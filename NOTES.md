@@ -1023,3 +1023,20 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   suppressed as with 0.1.0 (file, line and rule), none from the new rule, so nothing new to measure.
 - One earlier `make lint` with 0.1.0 on the same tree stopped with "the checker failed: checking demo/gen.bend: Maximum
   call stack size exceeded" on a busy machine; run again, it passed. Not seen with 0.1.1.
+
+## The merges table parsed once in generation (2026-10-28)
+
+- `demo/gen.bend` and `demo/gen_gpu.bend` parsed `merges_num.txt` (443 KB of digits for SmolLM2) three times: once in
+  `run2` for the malformed-table check, and twice in `generate`, which built the rules once for encoding the prompt and
+  again for decoding the text. Now `run2` parses it once and `generate` builds the rules once and reuses them (`+`).
+- Instructions (`perf stat -e cpu_core/instructions/u`, one thread pinned to a P-core, 135M, "The capital of France
+  is", 1 token): 12,026 million before, 11,952 with the rules built once, 11,831 with the parse shared too, 1.6% fewer
+  in all (195 million, before the first token). Each run repeated, within 0.01%. A generated token costs about 1,850
+  million, so this is a start-up saving only.
+- The same bits: `make check` passes and `make bits` is identical, on 16 threads and on one. `reference/test_gen.py`
+  now also checks that `gen` refuses a malformed merges table (odd count, a forward reference) before reading anything
+  else; the old binary passes it too.
+- Checked at the same time: the greedy `argmax` (`llama/main.bend`) is one pass. `gt_head` compares only the head of
+  the rest of the list with the best so far, so a list of N logits takes N-1 comparisons. Measured on a list of
+  descending F32: 72.6, 73.0 and 73.0 instructions per element at 49,152, 98,304 and 196,608 elements (building the
+  list included), linear; it is under 0.2% of a token.
