@@ -1,6 +1,6 @@
 {
   "packages": {
-    "bend-lint-rules": "0.1.0.0"
+    "bend-lint-rules": "0.1.1.0"
   },
   "rules": {
     "bend-lint-rules/performance/append_in_loop": "warning",
