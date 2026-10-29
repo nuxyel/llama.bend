@@ -928,7 +928,7 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   and the emitted C still has `par_att`'s two joins (now `..._par_att_j75` and `_j78`, lower case).
 - No source changed, so `bend-ml-llama` is not republished.
 - **Speed, the same commit (`108020e`) built with 2.0.37 and 2.0.38**, SmolLM2-135M, 5 alternated rounds in one session
-  on mains power (bend2-lab's harness, `smol135` block; medians and interquartile ranges, ms per token): one thread 115.4
+  on mains power (my measurement harness, `smol135` block; medians and interquartile ranges, ms per token): one thread 115.4
   (114.5-118.0) on 2.0.37 against 113.4 (113.2-113.4) on 2.0.38; 16 threads 57.7 (57.3-58.1) against 58.6 (57.9-58.7).
   At most 2% either way, with the same tokens: no change worth a new `BENCHMARK.md`, which stays dated (Bend 2.0.37).
 
@@ -998,3 +998,19 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
 - `make prep F32=0` skips the F32 copies, for generation only (1.7B: 6.4 GB less on disk): `prep --check` then skips
   their comparison, and a missing copy otherwise fails the check (it used to stop with a traceback). Tested on 135M with
   `w/*.bin` moved away: `prep --check` with F32=0 passes, `gen` gives the same text, and without F32=0 the check fails.
+
+## The release check's "COMPILED: tests/bad_weight.bend" was the harness (2026-10-27)
+
+- Issues #9 (2.0.38) and #13 (2.0.39) both said "programs that must not compile: COMPILED: tests/bad_weight.bend".
+  Neither program compiles: 2.0.37, 2.0.38 and 2.0.39 all reject both, with the same error (bad_weight: `Bands<576n,
+  576n>` expected, `Bands<192n, 576n>` observed, in `swap`; bad_cap: `True{}` expected, `False{}` observed, in
+  `third`), and bend exits with status 1 for each.
+- The cause was the workflow's loop, `bend f 2>&1 | grep -q "^- expected" || rejected="COMPILED: $f"`. GitHub runs
+  `shell: bash` with `-eo pipefail`, so the pipe took bend's status, 1 for a rejected program, and the `||` fired for
+  both files; the message named only the last one. `make laws` runs the same pipe under `sh`, without pipefail, so it
+  passed (as NOTES said for 2.0.39). Reproduced here with `bash -eo pipefail -c` on the old loop.
+- `scripts/check_rejected.sh` replaces both loops: it reads bend's status directly, requires `SOME PROOFS FAIL`, and
+  checks the error against `# expected:`, `# observed:` and `# location:` lines in each bad program, so a program
+  rejected for another reason (a failed import, a different mismatch) fails the check too. Tried with the swap
+  undone (exit status 0), with gate and down swapped (a different expected shape) and with the marker removed: each
+  fails, and the two real programs pass on 2.0.37, 2.0.38 and 2.0.39, under `sh` and under `bash -eo pipefail`.

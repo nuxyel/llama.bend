@@ -14,7 +14,7 @@ setup:            ## install the pinned Bend and Lean if missing, create the Pyt
 prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, 540 MB written); F32=0: without the F32 copies, enough to generate (1.7B: 6.4 GB less), not for make check
 	$(PY) reference/prep.py
 
-laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected; main.bend free of foreign code
+laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected, each with its own error; main.bend free of foreign code
 	$(PY) scripts/check_rts.py --self-test
 	$(PY) scripts/check_rts.py
 	! grep -n "@unsafe\|?TODO" llama/*.bend demo/*.bend tests/*.bend
@@ -22,7 +22,7 @@ laws:             ## the package's proofs, checked by bend and again by the kern
 	! grep -n "tensor-gpu\|gpu.bend" llama/main.bend llama/load.bend tests/*.bend
 	bend llama/main.bend
 	bend llama/main.bend --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK"
-	for f in tests/bad_*.bend; do bend $$f 2>&1 | grep -q "^- expected" && echo "rejected as it must be: $$f" || { echo "COMPILED, but must not: $$f"; exit 1; }; done
+	scripts/check_rejected.sh
 
 check: laws       ## the laws, prep, the Bend tokenizer against `tokenizers`; one layer, the forward and generation against transformers
 	$(PY) reference/prep.py --check

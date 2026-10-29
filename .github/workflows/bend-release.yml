@@ -70,8 +70,10 @@ jobs:
           B=$RUNNER_TEMP/bend-new
           export BEND_NO_TELEMETRY=1
           laws=$("$B" llama/main.bend 2>&1 | tail -1)
-          rejected=ok
-          for f in tests/bad_*.bend; do "$B" "$f" 2>&1 | grep -q "^- expected" || rejected="COMPILED: $f"; done
+          # Not `bend f | grep -q`: this shell has pipefail, so the pipe would take bend's exit status, 1 for every
+          # rejected program, and report it as compiled (issues #9 and #13).
+          r=$(scripts/check_rejected.sh "$B" 2>&1) && rejected="ok, $(echo "$r" | wc -l) rejected, each with its own error" \
+            || rejected=$(echo "$r" | grep -v "^rejected as it must be" | paste -sd ';' -)
           bench=$(BEND="$B" scripts/bench.sh 2>&1 | tail -3)
           {
             echo "laws=$laws"
