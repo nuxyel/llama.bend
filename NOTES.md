@@ -1014,3 +1014,12 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   rejected for another reason (a failed import, a different mismatch) fails the check too. Tried with the swap
   undone (exit status 0), with gate and down swapped (a different expected shape) and with the marker removed: each
   fails, and the two real programs pass on 2.0.37, 2.0.38 and 2.0.39, under `sh` and under `bash -eo pipefail`.
+
+## bend-lint 0.1.1 (2026-10-28)
+
+- `package.json` asks for bend-lint ^0.1.1 and `bend-lint.json` for `bend-lint-rules@0.1.1.0`, which adds
+  `performance/template_value_field` (a value field of a record of functions that reads a template, rebuilt at every
+  use; found in BendTorch). It is on at upstream's severity, `information`. `make lint`: the same 9 findings and 4
+  suppressed as with 0.1.0 (file, line and rule), none from the new rule, so nothing new to measure.
+- One earlier `make lint` with 0.1.0 on the same tree stopped with "the checker failed: checking demo/gen.bend: Maximum
+  call stack size exceeded" on a busy machine; run again, it passed. Not seen with 0.1.1.
