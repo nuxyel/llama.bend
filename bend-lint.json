@@ -14,6 +14,7 @@
     "bend-lint-rules/performance/loop_invariant_call": "warning",
     "bend-lint-rules/performance/missed_fork": "warning",
     "bend-lint-rules/performance/repeated_call": "warning",
+    "bend-lint-rules/performance/template_value_field": "information",
     "bend-lint-rules/performance/unused_result": "warning"
   }
 }
