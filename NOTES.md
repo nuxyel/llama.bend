@@ -1040,3 +1040,12 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   the rest of the list with the best so far, so a list of N logits takes N-1 comparisons. Measured on a list of
   descending F32: 72.6, 73.0 and 73.0 instructions per element at 49,152, 98,304 and 196,608 elements (building the
   list included), linear; it is under 0.2% of a token.
+
+## bend-lint 0.2.2 (2026-10-30)
+
+- `package.json` asks for bend-lint ^0.2.2 and `bend-lint.json` for `bend-lint-rules@0.2.2.0`: with 0.1.x in
+  `node_modules` the rules no longer built (a type mismatch on the rule API), so `make lint` stopped before any finding.
+- With 0.2.2 it reports the same 9 findings as in the 2026-10-17 pass, none new. Each now carries a `disable-next`
+  directive with its reason (`unused_result` on `forward_pre`/`forward_gen`'s empty or needed outputs and on
+  `layer_test`'s `y`, `eager_branch` on `ids_ok`, `repeated_call` on `lcl`), so `make lint` is clean: 0 findings, 13
+  suppressed.
