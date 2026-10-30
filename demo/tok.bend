@@ -106,6 +106,7 @@ def ids_ok(ns: List<&2, Nat>, +k: Nat) -> Bool:
         case Nil{}:
           False{}
         case Con{+b, u}:
+          # bend-lint: disable-next bend-lint-rules/performance/eager_branch -- on a valid table the walk reaches the end anyway not-expected-because: runs once per run; a whole bend-ml encode with 50,000 merges took 55 ms (2026-10-17)
           Bool.and(Bool.and(Nat.is_lt(a, Nat.add(256n, k)), Nat.is_lt(b, Nat.add(256n, k))), ids_ok(u, 1n+k))
 
 def toks_of_ids(ns: List<&2, Nat>) -> List<&2, BPE.Tk>:
@@ -323,6 +324,7 @@ def ws3(+run: List<&2, U32>, +rest: List<&2, U32>, ends: Bool, +n: Nat) -> List<
     case True{}:
       (run, rest)
     case False{}:
+      # bend-lint: disable-next bend-lint-rules/performance/repeated_call -- lcl walks one whitespace run, which is short not-expected-because: binding it once measured no change (NOTES 2026-10-16)
       ws4(Nat.is_lt(lcl(run, 0n), n), run, rest, n, lcl(run, 0n))
 
 # a run that ends the text, or ends right before a digit, is taken whole: SmolLM2 splits every digit off

@@ -72,9 +72,11 @@ def loop(fuel: Nat, +c: M.Cfg, +t0: Nat, -cap: Nat, +t: Nat, -inv: {Nat.add(t, f
     case 1n+p _ 0n:
       IO.pure(List<&2, Nat>, List.reverse(&2, Nat, gen))
     case 1n++p Con{+q, qt} 1n+lp:
+      # bend-lint: disable-next bend-lint-rules/performance/unused_result -- forward_pre returns lg and nf empty, and acts empty on more than one band not-expected-because: measured 2026-10-16: forward_pre took 5-16% off the time to the first token; one band keeps Act on purpose (NOTES)
       M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward_pre(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
         loop(p, c, t0, cap, 1n+t, M.step_inv(t, p, cap, inv), q, qt, 1n+lp, gen, m2, cs2))
     case 1n++p Nil{} 1n+lp:
+      # bend-lint: disable-next bend-lint-rules/performance/unused_result -- nf is the logits' input, computed anyway; acts is empty on more than one band not-expected-because: forward_gen measured 19% faster per token on 2026-10-16; keeping Act on one band measured faster (NOTES)
       M.Out.then(IO(List<&2, Nat>), c, cap, t, M.forward_gen(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
         +am = M.argmax(lg)
         +id = M.AM.i(am)

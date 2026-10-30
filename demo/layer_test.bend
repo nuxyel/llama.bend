@@ -53,6 +53,7 @@ def go(xs: List<&2, List<&2, F32>>, +c: M.Cfg, +d: Nat, -cap: Nat, +t: Nat, -inv
     case Nil{}:
       IO.pure(Unit, Unit{})
     case Con{+x, +rest}:
+      # bend-lint: disable-next bend-lint-rules/performance/unused_result -- y is the layer's output, computed anyway and printed through act; a test that runs once not-expected-because: each position reads its input from the file, so nothing passes y on
       M.BR.then(IO(Unit), c, cap, t, M.block(c, d, lw, cap, t, kv, M.step_room(t, List.length(&2, List<&2, F32>, rest), cap, inv), M.rot_at(c, t), x), y => kv2 => lw2 => act =>
         do IO<Unit>:
           show_act(t, act)
