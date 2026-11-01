@@ -1121,5 +1121,21 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
 - `ws3` called `lcl(run, 0n)` twice; it binds it once (`+l`).
 - Both directives are gone: `make lint` gives 0 findings, 11 suppressed (13 before). The same bits: `make bits`
   identical on 16 threads and on one, `test_tok`/`test_detok` and `test_gen` on the 135M pass, with the malformed
-  tables still refused. No timing: the before/after on the 135M waits for a run on an idle machine (both findings were
-  left as cheap before: binding `lcl` once measured no change on 2026-10-16, and the table check runs once per run).
+  tables still refused.
+- **Timing, before (devel at `44b3d20`) against after (this change, rebased on it)**, idle machine, 5 alternated
+  shuffled rounds, one thread pinned with `taskset -c 3`, `perf stat` in user mode, medians (the one-minute load 0.52
+  to 0.89 before each round; idle agent processes under 3% CPU). Three programs where `ids_ok` and `ws3` run: `tok` on
+  "hello world" (start-up and the table check over the 49,152 merges; 20 runs a round), `tok` on 16 KB of
+  `llama/main.bend` (whitespace runs for `ws3`), and `gen` on the 135M with one token (start-up to the first token; 3
+  runs a round).
+
+  | program | before | after | instructions/u before | after |
+  |---|---|---|---|---|
+  | `tok`, "hello world" | 36.3 ms | 36.1 ms | 343.8 M | 345.4 M |
+  | `tok`, 16 KB of code | 13.88 s | 13.97 s | 247.646 G | 247.642 G |
+  | `gen`, 135M, 1 token | 0.682 s | 0.682 s | 10.331 G | 10.329 G |
+
+  No change: every gap is under 1% in time and 0.5% in instructions, with the ranges overlapping, and the outputs are
+  identical. As expected from both findings: binding `lcl` once measured no change on 2026-10-16, and the table check
+  runs once per run (all of `tok` on "hello world", the table check included, is 36 ms of the 0.68 s). The fixes make
+  the code cleaner (a tail loop, no suppressions), not faster.
