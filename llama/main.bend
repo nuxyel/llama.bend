@@ -1108,8 +1108,11 @@ def argmax(xs: List<&2, F32>) -> AM:
       argmax.go(t, gt_head(t, h), 1n, 0n, h)
 
 # =====================================================================================================
-# Loading (the weights as written by llama.bend's reference/prep.py: <dir>/w/<name>.bin, little-endian F32,
-# one file per tensor, row = output; the config in <dir>/cfg.txt). The block reader is bend-ml's (MIT).
+# Loading, in plain Bend: every tensor read from the downloaded <dir>/hf/model.safetensors itself, BF16 at the
+# byte offsets that llama.bend's reference/prep.py writes into <dir>/w/st.txt, each number widened exactly to F32
+# (BF16 is the upper half of an F32); the config in <dir>/cfg.txt. llama/load.bend reads the same numbers with
+# foreign code, faster; this one uses File.read_at only, so --verdict checks it. The block
+# reader is bend-ml's (MIT).
 # =====================================================================================================
 
 # 4 little-endian bytes -> F32 (U32 and F32 hold the same Word(32n): it is a bitcast)
@@ -1144,7 +1147,7 @@ def rf_loop(k: Nat, +off: U32, +blk: U32, m: File & Result<&1, &1, U32 & String,
 def blocks_of(n: Nat, +per: Nat) -> Nat:
   Nat.div(Nat.add(n, Nat.sub(per, 1n)), per)
 
-# n F32 numbers (little-endian) from a file
+# n F32 numbers (little-endian) from a file (the tests' inputs; the weights are BF16, below)
 def read_floats(path: String, +n: Nat) -> IO(List<&2, F32>):
   do IO<List<&2, F32>>:
     f : File <- IO.try(File, File.open(path, "r"))
@@ -1165,61 +1168,35 @@ def depth_sel(few: Bool) -> Nat:
 def depth_for(+threads: U32) -> Nat:
   depth_sel(U32.is_le(threads, 2))
 
-def nm(+i: Nat, f: String) -> String:
-  "h" ++ Nat.show(i) ++ "." ++ f
+# ---- BF16 tensors: matrices kept in bands, each band read from its own range of the file ----
 
-# ---- the boundary: every weight file must hold exactly the numbers its shape needs ----
+# 2 little-endian bytes of a BF16 number -> the F32 whose upper 16 bits they are (exact)
+def bf16_le(+b0: U32, +b1: U32) -> F32:
+  bitcast(((b0 * 65536 : U32) + (b1 * 16777216 : U32) : U32))
 
-def size_cmp(ok: Bool, +path: String, +got: U32, +want: Nat) -> IO(Unit):
-  match ok:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      IO.die(Unit, 1, path ++ ": expected " ++ Nat.show(want) ++ " bytes, found " ++ U32.show(got) ++ "; run make prep again")
-
-def size_ok(m: File & Result<&1, &1, U32 & String, U32>, +want: Nat, +path: String) -> IO(Unit):
-  match m:
-    case Tuple{f, r}:
-      do IO<Unit>:
-        +n : U32 <- IO.pass(U32, r)
-        File.close(f)
-        size_cmp(U32.is_eq(n, U32.from_nat(want)), path, n, want)
-
-# stops the program unless the file holds exactly n F32 numbers (n * 4 bytes)
-def check_size(+path: String, +n: Nat) -> IO(Unit):
-  do IO<Unit>:
-    f : File <- IO.try(File, File.open(path, "r"))
-    m : File & Result<&1, &1, U32 & String, U32> <- File.size(f)
-    size_ok(m, Nat.mul(n, 4n), path)
-
-def wpath(dir: String, name: String) -> String:
-  dir ++ "/w/" ++ name ++ ".bin"
-
-def get_list(+dir: String, +name: String, +n: Nat) -> IO(List<&2, F32>):
-  do IO<List<&2, F32>>:
-    check_size(wpath(dir, name), n)
-    read_floats(wpath(dir, name), n)
-
-# reads the file in 1 MB blocks and writes each block straight into the matrix, so only one
-# block is a list at any time
-# ---- matrices kept in bands: each band is read from its own range of the file ----
-
-# writes the little-endian F32 numbers held in bs (4 bytes each) at index i, without building a
-# list of F32 first
-def fill_bytes(bs: List<&2, U32>, +i: U32, a: Array<F32>) -> Array<F32>:
+def bf16s(bs: List<&2, U32>) -> List<&2, F32>:
   match bs:
-    case Con{+b0, Con{+b1, Con{+b2, Con{+b3, t}}}}:
-      fill_bytes(t, (i + 1 : U32), Array.set(F32, a, i, f32_le(b0, b1, b2, b3)))
+    case Con{b0, Con{b1, t}}:
+      bf16_le(b0, b1) <> bf16s(t)
+    case _:
+      Nil{}
+
+# writes the BF16 numbers held in bs (2 bytes each), widened to F32, at index i, without building a list of F32
+# first
+def fill_bf16(bs: List<&2, U32>, +i: U32, a: Array<F32>) -> Array<F32>:
+  match bs:
+    case Con{+b0, Con{+b1, t}}:
+      fill_bf16(t, (i + 1 : U32), Array.set(F32, a, i, bf16_le(b0, b1)))
     case _:
       a
 
-def fill_bytes_mat(-r: Nat, -c: Nat, +i: U32, bs: List<&2, U32>, m: TA.Mat<r, c>) -> TA.Mat<r, c>:
+def fill_bf16_mat(-r: Nat, -c: Nat, +i: U32, bs: List<&2, U32>, m: TA.Mat<r, c>) -> TA.Mat<r, c>:
   match m:
     case TA.Mat{d}:
-      TA.Mat{fill_bytes(bs, i, d)}
+      TA.Mat{fill_bf16(bs, i, d)}
 
-# reads blocks of at most 1 MB until rem bytes have been read, so a band never takes numbers
-# that belong to the next one
+# reads blocks of at most 1 MB (2^19 numbers) until rem bytes have been read, so a band never takes numbers that
+# belong to the next one
 def stream_exact(k: Nat, -r: Nat, -c: Nat, +rem: Nat, +off: U32, +idx: U32, m: File & Result<&1, &1, U32 & String, List<&2, U32>>, acc: TA.Mat<r, c>) -> IO(TA.Mat<r, c>):
   match k m:
     case 0n Tuple{f, rs}:
@@ -1230,68 +1207,55 @@ def stream_exact(k: Nat, -r: Nat, -c: Nat, +rem: Nat, +off: U32, +idx: U32, m: F
       do IO<TA.Mat<r, c>>:
         bs : List<&2, U32> <- IO.pass(List<&2, U32>, rs)
         m2 : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(f, (off + 1048576 : U32), U32.from_nat(Nat.min(1048576n, Nat.sub(rem, 1048576n))))
-        stream_exact(p, r, c, Nat.sub(rem, 1048576n), (off + 1048576 : U32), (idx + 262144 : U32), m2, fill_bytes_mat(r, c, idx, bs, acc))
+        stream_exact(p, r, c, Nat.sub(rem, 1048576n), (off + 1048576 : U32), (idx + 524288 : U32), m2, fill_bf16_mat(r, c, idx, bs, acc))
 
-# rr x c numbers starting at number `start` of the file, into a band of r rows (rr == r, see
-# load_tree; the Array is sized for rr * c numbers as Mat.zeros would size it)
-def get_band(path: String, -r: Nat, +rr: Nat, +c: Nat, +start: Nat) -> IO(TA.Mat<r, c>):
+# rr x c numbers from number `start` of the tensor at byte lo, into a band of r rows (rr == r, see load_tree; the
+# Array is sized for rr * c numbers as Mat.zeros would size it)
+def get_band(path: String, -r: Nat, +rr: Nat, +c: Nat, +lo: U32, +start: Nat) -> IO(TA.Mat<r, c>):
   do IO<TA.Mat<r, c>>:
+    +off : U32 = (lo + U32.from_nat(Nat.mul(start, 2n)) : U32)
     f : File <- IO.try(File, File.open(path, "r"))
-    m : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(f, U32.from_nat(Nat.mul(start, 4n)), U32.from_nat(Nat.min(1048576n, Nat.mul(Nat.mul(rr, c), 4n))))
-    stream_exact(blocks_of(Nat.mul(Nat.mul(rr, c), 4n), 1048576n), r, c, Nat.mul(Nat.mul(rr, c), 4n), U32.from_nat(Nat.mul(start, 4n)), 0, m, TA.Mat{Array.new(F32, TA.cap_depth(Nat.mul(rr, c)), 0.0)})
+    m : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(f, off, U32.from_nat(Nat.min(1048576n, Nat.mul(Nat.mul(rr, c), 2n))))
+    stream_exact(blocks_of(Nat.mul(Nat.mul(rr, c), 2n), 1048576n), r, c, Nat.mul(Nat.mul(rr, c), 2n), off, 0, m, TA.Mat{Array.new(F32, TA.cap_depth(Nat.mul(rr, c)), 0.0)})
 
 # fills a tree of 2^d bands (TA.Bands.zeros's shape: each node halves its rows with TA.half) in row order; rr is r at
 # run time. The tree is walked by its depth, not built first with TA.Bands.zeros and matched: that tree's zero-filled
 # arrays were dropped unread (NOTES.md, 2026-11-01)
-def load_tree(+c: Nat, -r: Nat, +d: Nat, +rr: Nat, -e: {rr == r : Nat}, +path: String, +start: Nat) -> IO(TA.Bands<r, c>):
+def load_tree(+c: Nat, -r: Nat, +d: Nat, +rr: Nat, -e: {rr == r : Nat}, +path: String, +lo: U32, +start: Nat) -> IO(TA.Bands<r, c>):
   match d:
     case 0n:
       do IO<TA.Bands<r, c>>:
-        band : TA.Mat<r, c> <- get_band(path, r, rr, c, start)
+        band : TA.Mat<r, c> <- get_band(path, r, rr, c, lo, start)
         return TA.BLeaf{band}
     case 1n+q:
       do IO<TA.Bands<r, c>>:
-        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), q, TA.half(rr), TA.eq_half(rr, r, e), path, start)
-        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), q, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, Nat.add(start, Nat.mul(TA.half(rr), c)))
+        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), q, TA.half(rr), TA.eq_half(rr, r, e), path, lo, start)
+        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), q, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, lo, Nat.add(start, Nat.mul(TA.half(rr), c)))
         return TA.BNode{x2, y2}
 
-def get_bands(+dir: String, +name: String, +d: Nat, +r: Nat, +c: Nat) -> IO(TA.Bands<r, c>):
-  do IO<TA.Bands<r, c>>:
-    check_size(wpath(dir, name), Nat.mul(r, c))
-    load_tree(c, r, d, r, {==}, wpath(dir, name), 0n)
+# ---- the boundary: every tensor must lie inside the file, where File.read_at's U32 offset reaches ----
 
-# one layer's weights; d: the band depth (depth_for)
-def load_lw(+c: Cfg, +dir: String, +i: Nat, +d: Nat) -> IO(LW<c>):
-  do IO<LW<c>>:
-    ln1 : List<&2, F32> <- get_list(dir, nm(i, "ln1"), Cfg.dim(c))
-    q : TA.Bands<Cfg.dim(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "q"), d, Cfg.dim(c), Cfg.dim(c))
-    k : TA.Bands<Cfg.kvw(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "k"), d, Cfg.kvw(c), Cfg.dim(c))
-    v : TA.Bands<Cfg.kvw(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "v"), d, Cfg.kvw(c), Cfg.dim(c))
-    o : TA.Bands<Cfg.dim(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "o"), d, Cfg.dim(c), Cfg.dim(c))
-    ln2 : List<&2, F32> <- get_list(dir, nm(i, "ln2"), Cfg.dim(c))
-    gate : TA.Bands<Cfg.ffn(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "gate"), d, Cfg.ffn(c), Cfg.dim(c))
-    up : TA.Bands<Cfg.ffn(c), Cfg.dim(c)> <- get_bands(dir, nm(i, "up"), d, Cfg.ffn(c), Cfg.dim(c))
-    down : TA.Bands<Cfg.dim(c), Cfg.ffn(c)> <- get_bands(dir, nm(i, "down"), d, Cfg.dim(c), Cfg.ffn(c))
-    return LW{ln1, q, k, v, o, ln2, gate, up, down}
+def span_cmp(ok: Bool, +path: String, +t: Nat) -> IO(Unit):
+  match ok:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      IO.die(Unit, 1, path ++ ": tensor " ++ Nat.show(t) ++ " of w/st.txt ends past the end of the file or starts beyond 4 GiB (File.read_at takes a U32 offset); run reference/prep.py --index")
 
-def load_layers(k: Nat, +c: Cfg, +dir: String, +d: Nat, +i: Nat, acc: List<&1, LW<c>>) -> IO(List<&1, LW<c>>):
-  match k:
-    case 0n:
-      IO.pure(List<&1, LW<c>>, List.reverse(&1, LW<c>, acc))
-    case 1n+p:
-      do IO<List<&1, LW<c>>>:
-        l : LW<c> <- load_lw(c, dir, i, d)
-        load_layers(p, c, dir, d, 1n+i, l <> acc)
+def span_ok(m: File & Result<&1, &1, U32 & String, U32>, +hi: U32, +lo: U32, +end: U32, +path: String, +t: Nat) -> IO(Unit):
+  match m:
+    case Tuple{f, r}:
+      do IO<Unit>:
+        +n : U32 <- IO.pass(U32, r)
+        File.close(f)
+        span_cmp(Bool.and(U32.is_eq(hi, 0), Bool.and(U32.is_le(lo, end), U32.is_le(end, n))), path, t)
 
-# the whole model; the embedding gets one more level of bands than the layers (2^5 with 16 threads)
-def load_model(+c: Cfg, +dir: String) -> IO(Model<c>):
-  do IO<Model<c>>:
-    threads : U32 <- IO.thread_count()
-    +d : Nat = depth_for(threads)
-    emb : TA.Bands<Cfg.vocab(c), Cfg.dim(c)> <- get_bands(dir, "emb", Nat.add(d, Nat.min(d, 1n)), Cfg.vocab(c), Cfg.dim(c))
-    ls : List<&1, LW<c>> <- load_layers(Cfg.layers(c), c, dir, d, 0n, Nil{})
-    lnf : List<&2, F32> <- get_list(dir, "lnf", Cfg.dim(c))
-    return Model{d, emb, ls, lnf}
+# stops the program unless tensor t, n BF16 numbers from byte hi * 2^32 + lo, ends inside the file with hi = 0
+def check_span(+path: String, +hi: U32, +lo: U32, +n: Nat, +t: Nat) -> IO(Unit):
+  do IO<Unit>:
+    f : File <- IO.try(File, File.open(path, "r"))
+    m : File & Result<&1, &1, U32 & String, U32> <- File.size(f)
+    span_ok(m, hi, lo, (lo + U32.from_nat(Nat.mul(n, 2n)) : U32), path, t)
 
 # ---- the config file: kv g half f layers vocab, then the bits of eps and theta as F32, in decimal ----
 
@@ -1344,3 +1308,97 @@ def read_cfg(+dir: String) -> IO(Cfg):
   do IO<Cfg>:
     bs : List<&2, U32> <- read_bytes(dir ++ "/cfg.txt")
     cfg_of(dir ++ "/cfg.txt", u32s(bs))
+
+# ---- w/st.txt: tensor t's BF16 data starts at byte hi * 2^32 + lo of hf/model.safetensors (numbers 2t and 2t + 1) ----
+
+def st_path(+dir: String) -> String:
+  dir ++ "/hf/model.safetensors"
+
+def st_nth(xs: List<&2, U32>, k: Nat) -> U32:
+  match xs k:
+    case Con{+x, t} 0n:
+      x
+    case Con{x, t} 1n+p:
+      st_nth(t, p)
+    case Nil{} _:
+      0
+
+# the tensors in w/st.txt's order (reference/prep.py's weights()): emb, then layer i's ln1 q k v o ln2 gate up down
+# (j = 0..8), then lnf
+def t_layer(+i: Nat, +j: Nat) -> Nat:
+  Nat.add(Nat.add(1n, Nat.mul(9n, i)), j)
+
+def st_check(ok: Bool, +dir: String, xs: List<&2, U32>) -> IO(List<&2, U32>):
+  match ok:
+    case True{}:
+      IO.pure(List<&2, U32>, xs)
+    case False{}:
+      IO.die(List<&2, U32>, 1, dir ++ "/w/st.txt: not two numbers for each of the model's tensors; run reference/prep.py --index")
+
+# w/st.txt's numbers, two for each of the 2 + 9 * layers tensors
+def read_st(+dir: String, +layers: Nat) -> IO(List<&2, U32>):
+  do IO<List<&2, U32>>:
+    bs : List<&2, U32> <- read_bytes(dir ++ "/w/st.txt")
+    +xs : List<&2, U32> = u32s(bs)
+    st_check(Nat.is_eq(List.length(&2, U32, xs), Nat.mul(2n, Nat.add(2n, Nat.mul(9n, layers)))), dir, xs)
+
+def st_hi(+st: List<&2, U32>, +t: Nat) -> U32:
+  st_nth(st, Nat.mul(2n, t))
+
+def st_lo(+st: List<&2, U32>, +t: Nat) -> U32:
+  st_nth(st, 1n+Nat.mul(2n, t))
+
+# tensor t (w/st.txt's order) as bands of depth d
+def get_bands(+dir: String, +st: List<&2, U32>, +t: Nat, +d: Nat, +r: Nat, +c: Nat) -> IO(TA.Bands<r, c>):
+  do IO<TA.Bands<r, c>>:
+    check_span(st_path(dir), st_hi(st, t), st_lo(st, t), Nat.mul(r, c), t)
+    load_tree(c, r, d, r, {==}, st_path(dir), st_lo(st, t), 0n)
+
+# a norm's n weights as a list (n * 2 bytes, read at once)
+def get_norm(+dir: String, +st: List<&2, U32>, +t: Nat, +n: Nat) -> IO(List<&2, F32>):
+  do IO<List<&2, F32>>:
+    check_span(st_path(dir), st_hi(st, t), st_lo(st, t), n, t)
+    f : File <- IO.try(File, File.open(st_path(dir), "r"))
+    m : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(f, st_lo(st, t), U32.from_nat(Nat.mul(n, 2n)))
+    bs : List<&2, U32> <- rb_done(m)
+    return List.take(&2, F32, bf16s(bs), n)
+
+# one layer's weights (tensors t_layer(i, 0..8)) from w/st.txt's numbers st; d: the band depth (depth_for)
+def load_lw_st(+c: Cfg, +dir: String, +st: List<&2, U32>, +i: Nat, +d: Nat) -> IO(LW<c>):
+  do IO<LW<c>>:
+    ln1 : List<&2, F32> <- get_norm(dir, st, t_layer(i, 0n), Cfg.dim(c))
+    q : TA.Bands<Cfg.dim(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 1n), d, Cfg.dim(c), Cfg.dim(c))
+    k : TA.Bands<Cfg.kvw(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 2n), d, Cfg.kvw(c), Cfg.dim(c))
+    v : TA.Bands<Cfg.kvw(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 3n), d, Cfg.kvw(c), Cfg.dim(c))
+    o : TA.Bands<Cfg.dim(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 4n), d, Cfg.dim(c), Cfg.dim(c))
+    ln2 : List<&2, F32> <- get_norm(dir, st, t_layer(i, 5n), Cfg.dim(c))
+    gate : TA.Bands<Cfg.ffn(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 6n), d, Cfg.ffn(c), Cfg.dim(c))
+    up : TA.Bands<Cfg.ffn(c), Cfg.dim(c)> <- get_bands(dir, st, t_layer(i, 7n), d, Cfg.ffn(c), Cfg.dim(c))
+    down : TA.Bands<Cfg.dim(c), Cfg.ffn(c)> <- get_bands(dir, st, t_layer(i, 8n), d, Cfg.dim(c), Cfg.ffn(c))
+    return LW{ln1, q, k, v, o, ln2, gate, up, down}
+
+# layer i's weights alone (layer_test); d: the band depth (depth_for)
+def load_lw(+c: Cfg, +dir: String, +i: Nat, +d: Nat) -> IO(LW<c>):
+  do IO<LW<c>>:
+    +st : List<&2, U32> <- read_st(dir, Cfg.layers(c))
+    load_lw_st(c, dir, st, i, d)
+
+def load_layers(k: Nat, +c: Cfg, +dir: String, +st: List<&2, U32>, +d: Nat, +i: Nat, acc: List<&1, LW<c>>) -> IO(List<&1, LW<c>>):
+  match k:
+    case 0n:
+      IO.pure(List<&1, LW<c>>, List.reverse(&1, LW<c>, acc))
+    case 1n+p:
+      do IO<List<&1, LW<c>>>:
+        l : LW<c> <- load_lw_st(c, dir, st, i, d)
+        load_layers(p, c, dir, st, d, 1n+i, l <> acc)
+
+# the whole model; the embedding gets one more level of bands than the layers (2^5 with 16 threads)
+def load_model(+c: Cfg, +dir: String) -> IO(Model<c>):
+  do IO<Model<c>>:
+    threads : U32 <- IO.thread_count()
+    +d : Nat = depth_for(threads)
+    +st : List<&2, U32> <- read_st(dir, Cfg.layers(c))
+    emb : TA.Bands<Cfg.vocab(c), Cfg.dim(c)> <- get_bands(dir, st, 0n, Nat.add(d, Nat.min(d, 1n)), Cfg.vocab(c), Cfg.dim(c))
+    ls : List<&1, LW<c>> <- load_layers(Cfg.layers(c), c, dir, st, d, 0n, Nil{})
+    lnf : List<&2, F32> <- get_norm(dir, st, t_layer(Cfg.layers(c), 0n), Cfg.dim(c))
+    return Model{d, emb, ls, lnf}
