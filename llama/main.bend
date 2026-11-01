@@ -19,7 +19,7 @@
 # few ulps and the argmax exactly (llama.bend's NOTES.md).
 
 import Base
-import bend-ml-tensor-array@0.1.14.0/main.bend as TA
+import bend-ml-tensor-array@0.1.19.0/main.bend as TA
 
 # =====================================================================================================
 # Arithmetic lemmas (used by the laws below)
@@ -697,8 +697,9 @@ def sr_of(k: Array<F32>, al: TA.AL) -> SR:
       SR{k, l}
 
 # LAW (read_len): reading m + 1 numbers of an array onto acc gives m + 1 more scores.
-# PROOF: by induction on m. With 0 left it reads one number and reverses the list (rev_len counts it); with 1 + p
-# left it reads one and recurses, and len_step moves the 1 out of the sum (tensor-array's leaf_len, for scores).
+# PROOF: by induction on m. With 0 left it reads one number onto acc (1 + the length of acc, by the definitions);
+# with 1 + p left it reads one and recurses one index down, and len_step moves the 1 out of the sum (tensor-array's
+# leaf_len, for scores).
 law read_len:
   for k: Array<F32>
   for +m: Nat
@@ -710,15 +711,15 @@ law read_len:
 def read_len(k, m, idx, acc, rc):
   match m rc:
     case 0n Tuple{d, +v}:
-      TA.zero_out(List.length(&2, F32, List.reverse.go(&2, F32, v <> acc, Nil{})), 1n+List.length(&2, F32, acc), TA.rev_len(v <> acc, Nil{}))
+      {==}
     case 1n+p Tuple{d, +v}:
-      TA.len_step(sr_len(sr_of(k, TA.read_l(p, (idx + 1 : U32), v <> acc, Array.get(F32, d, (idx + 1 : U32))))), p, List.length(&2, F32, acc), read_len(k, p, (idx + 1 : U32), v <> acc, Array.get(F32, d, (idx + 1 : U32))))
+      TA.len_step(sr_len(sr_of(k, TA.read_l(p, (idx - 1 : U32), v <> acc, Array.get(F32, d, (idx - 1 : U32))))), p, List.length(&2, F32, acc), read_len(k, p, (idx - 1 : U32), v <> acc, Array.get(F32, d, (idx - 1 : U32))))
 
-# read the 1 + t scores the gemm wrote
+# read the 1 + t scores the gemm wrote (read_l reads from the last index down, so it starts at t)
 def sr_read(+t: Nat, g: TA.G) -> SR:
   match g:
     case TA.G{qa, k, s}:
-      sr_of(k, TA.read_l(t, 0, Nil{}, Array.get(F32, s, 0)))
+      sr_of(k, TA.read_l(t, U32.from_nat(t), Nil{}, Array.get(F32, s, U32.from_nat(t))))
 
 # q·k for the keys of positions 0..t, oldest first: K (t + 1 rows of `head` numbers) times q, the product
 # Mat.matmul_nt computes for one row (bend-ml-tensor-array's gemm)
@@ -728,7 +729,7 @@ def scores(+hd: Nat, +t: Nat, k: Array<F32>, +q: List<&2, F32>) -> SR:
 def sr_len_g(+t: Nat, g: TA.G) -> {sr_len(sr_read(t, g)) == 1n+t : Nat}:
   match g:
     case TA.G{qa, k, s}:
-      TA.zero_out(sr_len(sr_of(k, TA.read_l(t, 0, Nil{}, Array.get(F32, s, 0)))), 1n+t, read_len(k, t, 0, Nil{}, Array.get(F32, s, 0)))
+      TA.zero_out(sr_len(sr_of(k, TA.read_l(t, U32.from_nat(t), Nil{}, Array.get(F32, s, U32.from_nat(t))))), 1n+t, read_len(k, t, U32.from_nat(t), Nil{}, Array.get(F32, s, U32.from_nat(t))))
 
 # LAW (causal): attention at position t scores exactly t + 1 keys, the positions 0..t: one score per position
 # written, none for a position not yet computed.
@@ -756,7 +757,7 @@ def wr_of(v: Array<F32>, al: TA.AL) -> WR:
 def wr_read(+hd: Nat, g: TA.G) -> WR:
   match g:
     case TA.G{wa, v, o}:
-      wr_of(v, TA.read_l(Nat.sub(hd, 1n), 0, Nil{}, Array.get(F32, o, 0)))
+      wr_of(v, TA.read_l(Nat.sub(hd, 1n), U32.from_nat(Nat.sub(hd, 1n)), Nil{}, Array.get(F32, o, U32.from_nat(Nat.sub(hd, 1n)))))
 
 def weighted(+hd: Nat, +t: Nat, v: Array<F32>, +w: List<&2, F32>) -> WR:
   wr_read(hd, TA.gemm(1n, hd, 1n+t, U32.from_nat(1n+t), 1, U32.from_nat(hd), 1, TA.fill_list(w, 0, Array.new(F32, TA.cap_depth(1n+t), 0.0)), v, Array.new(F32, TA.cap_depth(hd), 0.0)))
