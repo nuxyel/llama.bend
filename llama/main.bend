@@ -1263,6 +1263,149 @@ def sample(+xs: List<&2, F32>, +temp: F32, +k: Nat, +p: F32, +u: F32) -> Cand:
   +cs = topk(k, xs)
   sample.cs(cs, temp, top_of(cs), p, u)
 
+# ---- LAW (sample_below): the drawn id is an id of the logits ----
+
+# every candidate's id is below n
+def below(cs: List<&2, Cand>, +n: Nat) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{Cand{v, i}, t}:
+      Bool.and(TA.leb(1n+i, n), below(t, n))
+
+# the two halves of a true Bool.and
+def and_l(+a: Bool, -b: Bool, e: {True{} == Bool.and(a, b) : Bool}) -> {True{} == a : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      e
+
+def and_r(+a: Bool, +b: Bool, e: {True{} == Bool.and(a, b) : Bool}) -> {True{} == b : Bool}:
+  match a:
+    case True{}:
+      e
+    case False{}:
+      %e : TA.BD(_, Unit, {True{} == b : Bool})
+      Unit{}
+
+# PROOF: by induction on cs. Inserting puts the new candidate (id i < n) at the front, or keeps the head and
+# inserts into the tail, whose ids are below n by the induction hypothesis.
+law ins_below:
+  for +cs: List<&2, Cand>
+  for +g: Bool
+  for +v: F32
+  for +i: Nat
+  for +n: Nat
+  for +e: {True{} == below(cs, n) : Bool}
+  for ei: {True{} == TA.leb(1n+i, n) : Bool}
+  {True{} == below(ins(cs, g, v, i), n) : Bool}
+
+def ins_below(cs, g, v, i, n, e, ei):
+  match cs g:
+    case Nil{} _:
+      %ei : {True{} == Bool.and(_, True{}) : Bool}
+      {==}
+    case Con{h, t} True{}:
+      %ei : {True{} == Bool.and(_, below(h <> t, n)) : Bool}
+      e
+    case Con{Cand{hv, hi}, +t} False{}:
+      %and_l(TA.leb(1n+hi, n), below(t, n), e) : {True{} == Bool.and(_, below(ins(t, goes_before(t, v), v, i), n)) : Bool}
+      ins_below(t, goes_before(t, v), v, i, n, and_r(TA.leb(1n+hi, n), below(t, n), e), ei)
+
+# PROOF: taking the first k candidates keeps a part of them.
+law take_below:
+  for +cs: List<&2, Cand>
+  for +k: Nat
+  for +n: Nat
+  for +e: {True{} == below(cs, n) : Bool}
+  {True{} == below(List.take(&2, Cand, cs, k), n) : Bool}
+
+def take_below(cs, k, n, e):
+  match cs k:
+    case Nil{} _:
+      {==}
+    case Con{h, t} 0n:
+      {==}
+    case Con{Cand{v, i}, +t} 1n+p:
+      %and_l(TA.leb(1n+i, n), below(t, n), e) : {True{} == Bool.and(_, below(List.take(&2, Cand, t, p), n)) : Bool}
+      take_below(t, p, n, and_r(TA.leb(1n+i, n), below(t, n), e))
+
+# PROOF: by induction on xs, with i + length(xs) = n: the head of xs has id i < n (step_room), and after it
+# 1 + i + length(tail) = n still holds (step_inv); ins_below and take_below keep the candidates' ids below n.
+law topk_below:
+  for +xs: List<&2, F32>
+  for +g: Bool
+  for +k: Nat
+  for +i: Nat
+  for +m: Nat
+  for +lo: F32
+  for +cs: List<&2, Cand>
+  for +n: Nat
+  for +inv: {Nat.add(i, List.length(&2, F32, xs)) == n : Nat}
+  for +e: {True{} == below(cs, n) : Bool}
+  {True{} == below(topk.go(xs, g, k, i, m, lo, cs), n) : Bool}
+
+def topk_below(xs, g, k, i, m, lo, cs, n, inv, e):
+  match xs g:
+    case Nil{} _:
+      e
+    case Con{h, +t} False{}:
+      topk_below(t, enters(t, Nat.is_lt(m, k), lo), k, 1n+i, m, lo, cs, n, step_inv(i, List.length(&2, F32, t), n, inv), e)
+    case Con{+h, +t} True{}:
+      +cs2 = List.take(&2, Cand, ins(cs, goes_before(cs, h), h, i), k)
+      +m2 = Nat.min(1n+m, k)
+      +lo2 = last_v(cs2, h)
+      topk_below(t, enters(t, Nat.is_lt(m2, k), lo2), k, 1n+i, m2, lo2, cs2, n, step_inv(i, List.length(&2, F32, t), n, inv), take_below(ins(cs, goes_before(cs, h), h, i), k, n, ins_below(cs, goes_before(cs, h), h, i, n, e, step_room(i, List.length(&2, F32, t), n, inv))))
+
+# PROOF: by induction on cs: the draw returns a candidate of cs, whose id is below n, or id 0 < n when cs is empty.
+law pick_below:
+  for +cs: List<&2, Cand>
+  for +s: Bool
+  for +q: Nat
+  for +temp: F32
+  for +top: F32
+  for +target: F32
+  for +acc: F32
+  for +n: Nat
+  for +e: {True{} == below(cs, n) : Bool}
+  for pos: {True{} == TA.leb(1n, n) : Bool}
+  {True{} == TA.leb(1n+Cand.i(pick.go(cs, s, q, temp, top, target, acc)), n) : Bool}
+
+def pick_below(cs, s, q, temp, top, target, acc, n, e, pos):
+  match cs s:
+    case Nil{} _:
+      pos
+    case Con{Cand{v, i}, t} True{}:
+      and_l(TA.leb(1n+i, n), below(t, n), e)
+    case Con{Cand{+v, +i}, +t} False{}:
+      +acc2 = F32.add(acc, weight(v, temp, top))
+      pick_below(t, stops(t, Nat.sub(q, 1n), temp, top, target, acc2), Nat.sub(q, 1n), temp, top, target, acc2, n, and_r(TA.leb(1n+i, n), below(t, n), e), pos)
+
+def sample.pick_below(+cs: List<&2, Cand>, kp: Kept, +temp: F32, +top: F32, +u: F32, +n: Nat, e: {True{} == below(cs, n) : Bool}, pos: {True{} == TA.leb(1n, n) : Bool}) -> {True{} == TA.leb(1n+Cand.i(sample.pick(cs, kp, temp, top, u)), n) : Bool}:
+  match kp:
+    case Kept{+c, +z}:
+      pick_below(cs, stops(cs, Nat.sub(c, 1n), temp, top, F32.mul(u, z), 0.0), Nat.sub(c, 1n), temp, top, F32.mul(u, z), 0.0, n, e, pos)
+
+# LAW (sample_below): from logits xs with at least one value, the id sample draws is below the length of xs: an id
+# of the vocabulary, whatever the temperature, k, p and draw.
+# PROOF: the top-k pass only stores ids of xs, each below its length (topk_below, from i = 0 and no candidates),
+# and the draw returns one of them (pick_below, through the top-p count, whatever it is).
+law sample_below:
+  for +xs: List<&2, F32>
+  for +temp: F32
+  for +k: Nat
+  for +p: F32
+  for +u: F32
+  for pos: {True{} == TA.leb(1n, List.length(&2, F32, xs)) : Bool}
+  {True{} == TA.leb(1n+Cand.i(sample(xs, temp, k, p, u)), List.length(&2, F32, xs)) : Bool}
+
+def sample_below(xs, temp, k, p, u, pos):
+  +cs = topk(k, xs)
+  +n = List.length(&2, F32, xs)
+  +top = top_of(cs)
+  sample.pick_below(cs, kept.go(cs, True{}, temp, top, F32.mul(p, total(cs, temp, top, 0.0)), 0n, 0.0), temp, top, u, n, topk_below(xs, enters(xs, Nat.is_lt(0n, k), 0.0), k, 0n, 0n, 0.0, Nil{}, n, {==}, {==}), pos)
+
 # =====================================================================================================
 # Loading, in plain Bend: every tensor read from the downloaded <dir>/hf/model.safetensors itself, BF16 at the
 # byte offsets that llama.bend's reference/prep.py writes into <dir>/w/st.txt, each number widened exactly to F32
