@@ -1239,23 +1239,25 @@ def get_band(path: String, -r: Nat, +rr: Nat, +c: Nat, +start: Nat) -> IO(TA.Mat
     m : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(f, U32.from_nat(Nat.mul(start, 4n)), U32.from_nat(Nat.min(1048576n, Nat.mul(Nat.mul(rr, c), 4n))))
     stream_exact(blocks_of(Nat.mul(Nat.mul(rr, c), 4n), 1048576n), r, c, Nat.mul(Nat.mul(rr, c), 4n), U32.from_nat(Nat.mul(start, 4n)), 0, m, TA.Mat{Array.new(F32, TA.cap_depth(Nat.mul(rr, c)), 0.0)})
 
-# fills the bands of b (whose shape comes from TA.Bands.zeros) in row order; rr is r at run time
-def load_tree(+c: Nat, -r: Nat, b: TA.Bands<r, c>, +rr: Nat, -e: {rr == r : Nat}, +path: String, +start: Nat) -> IO(TA.Bands<r, c>):
-  match b:
-    case TA.BLeaf{m}:
+# fills a tree of 2^d bands (TA.Bands.zeros's shape: each node halves its rows with TA.half) in row order; rr is r at
+# run time. The tree is walked by its depth, not built first with TA.Bands.zeros and matched: that tree's zero-filled
+# arrays were dropped unread (NOTES.md, 2026-11-01)
+def load_tree(+c: Nat, -r: Nat, +d: Nat, +rr: Nat, -e: {rr == r : Nat}, +path: String, +start: Nat) -> IO(TA.Bands<r, c>):
+  match d:
+    case 0n:
       do IO<TA.Bands<r, c>>:
         band : TA.Mat<r, c> <- get_band(path, r, rr, c, start)
         return TA.BLeaf{band}
-    case TA.BNode{x, y}:
+    case 1n+q:
       do IO<TA.Bands<r, c>>:
-        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), x, TA.half(rr), TA.eq_half(rr, r, e), path, start)
-        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), y, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, Nat.add(start, Nat.mul(TA.half(rr), c)))
+        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), q, TA.half(rr), TA.eq_half(rr, r, e), path, start)
+        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), q, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, Nat.add(start, Nat.mul(TA.half(rr), c)))
         return TA.BNode{x2, y2}
 
 def get_bands(+dir: String, +name: String, +d: Nat, +r: Nat, +c: Nat) -> IO(TA.Bands<r, c>):
   do IO<TA.Bands<r, c>>:
     check_size(wpath(dir, name), Nat.mul(r, c))
-    load_tree(c, r, TA.Bands.zeros(d, r, c), r, {==}, wpath(dir, name), 0n)
+    load_tree(c, r, d, r, {==}, wpath(dir, name), 0n)
 
 # one layer's weights; d: the band depth (depth_for)
 def load_lw(+c: Cfg, +dir: String, +i: Nat, +d: Nat) -> IO(LW<c>):
