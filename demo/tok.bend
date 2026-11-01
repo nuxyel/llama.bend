@@ -607,13 +607,16 @@ def bytes_of(cs: List<&2, Char>) -> List<&2, U32>:
 def default_system() -> List<&2, U32>:
   bytes_of(String.to_list("You are a helpful AI assistant named SmolLM, trained by Hugging Face"))
 
-def bytes_eq(xs: List<&2, U32>, ys: List<&2, U32>) -> Bool:
-  match xs ys:
-    case Nil{} Nil{}:
+# ok: whether the bytes before were equal (the walk stops at the first difference)
+def bytes_eq(xs: List<&2, U32>, ys: List<&2, U32>, ok: Bool) -> Bool:
+  match xs ys ok:
+    case _ _ False{}:
+      False{}
+    case Nil{} Nil{} True{}:
       True{}
-    case Con{+x, xt} Con{+y, yt}:
-      Bool.and(U32.is_eq(x, y), bytes_eq(xt, yt))
-    case _ _:
+    case Con{+x, xt} Con{+y, yt} True{}:
+      bytes_eq(xt, yt, U32.is_eq(x, y))
+    case _ _ True{}:
       False{}
 
 # <|im_start|>role\ncontent<|im_end|>\n
@@ -647,7 +650,7 @@ def first_is_system(ms: List<&2, List<&2, U32>>) -> Bool:
     case Nil{}:
       True{}
     case Con{+role, t}:
-      bytes_eq(role, bytes_of(String.to_list("system")))
+      bytes_eq(role, bytes_of(String.to_list("system")), True{})
 
 # the ids of a conversation in SmolLM2-Instruct's template (an empty one: no default system message, as in the
 # template, whose loop never runs)
