@@ -144,10 +144,11 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   position (0.2 ms per cached position at most). What remains is the weight products, and still loading: 5.1 s to load
   the 1.7B and generate one token, against 3.2 s for `transformers` and 0.8 s for llama.cpp. Peak memory 6.8 GB, on one
   thread as on 16, the lowest of the four.
-- **The GPU path is slower than the CPU** (idle machine, 2026-10-24, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
-  4050 Laptop, the 135M takes 179 ms per token against 60.5 on 16 CPU threads, the 360M 231 against 107: every product is
-  a GPU call with a fixed cost of about 1 ms, and generation has one vector a token to amortize it over. The 1.7B does
-  not fit in the card's 6 GB; with `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.6 s per token (one run, busy machine).
+- **The GPU path is slower than the CPU** (idle machine, 2026-11-01, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
+  4050 Laptop, over 128 tokens, the 135M takes 184 ms per token and the 360M 240, against 52.9 and 98.3 on 16 CPU threads
+  ([`BENCHMARK.md`](BENCHMARK.md), 32 tokens): every product is a GPU call with a fixed cost of about 1 ms, and
+  generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
+  `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host memory.
 - Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
   in their type, and the numerics are tested, never proved.
 
