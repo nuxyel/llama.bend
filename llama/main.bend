@@ -1271,6 +1271,7 @@ def below(cs: List<&2, Cand>, +n: Nat) -> Bool:
     case Nil{}:
       True{}
     case Con{Cand{v, i}, t}:
+      # bend-lint: disable-next bend-lint-rules/performance/eager_branch -- below only appears in the laws' types; no program runs it not-expected-because: proofs only, nothing to measure
       Bool.and(TA.leb(1n+i, n), below(t, n))
 
 # the two halves of a true Bool.and
