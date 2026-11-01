@@ -1256,3 +1256,33 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   already stacked (four bangs a layer), and the remaining ones depend on each other. A runtime that prefetches the
   dirty pages, or keeps the frontier's inputs in device memory, is what would remove it; that is an upstream question,
   not a llama.bend change.
+
+## bend-ml-tensor-array 0.1.19.0 and bend-ml-tensor-gpu 0.1.5.1 (2026-11-01)
+
+- The package, the demos' loader and the GPU path import `bend-ml-tensor-array@0.1.19.0` (the unrolled `dotg`, `read_l`
+  without the reverse) and `bend-ml-tensor-gpu@0.1.5.1` (0.1.2.1's products on 0.1.19.0). `read_l` now reads from the
+  last index down, so its three callers in `main.bend` (the scores, the weighted sum, the law `read_len`) start at the
+  last index; the list they get is the same, in index order, and `read_len`'s base case no longer needs `rev_len`,
+  which 0.1.19.0 dropped. With the package loader's fix (`load_tree` walking the band depth, above) this changes
+  `bend-ml-llama`'s code.
+- Checks: `make laws` (`ALL PROOFS CHECK` from bend and `--verdict`, both bad programs rejected), `make bits` on 16
+  threads and on one (every output identical: the unrolled `dotg` keeps the order of each sum), `make check` (0
+  failures, the thread probe at 1.00 and 6.95 cores), `make bench-gpu` and `GPU=off scripts/bench.sh` (transformers'
+  tokens).
+- Per token, the measurement the entry above asked for, on the real pin: `demo/gen` built from `e4e3b3f` (0.1.14.0)
+  and from this change, 32 tokens from "Once upon a time", ms by the program's own clock, 7 shuffled alternated rounds
+  per model and thread count, the 16-thread 135M first; load 1.1-1.5 before each round, mains power, `performance`
+  profile, CPU 3's sibling idle, `codex` and `claude` processes present but idle (the preflight flags them). Medians
+  (min-max); raw rows in `bench/2026-11-01-tensor-array-0.1.19/`:
+
+  | model | threads | 0.1.14.0 | 0.1.19.0 | change |
+  |---|---|---|---|---|
+  | 135M | 16 | 53.7 (52.3-54.7) | 54.5 (53.2-55.5) | +1% |
+  | 135M | 1 | 109.8 (100.1-120.0) | 76.3 (75.7-78.3) | -30% |
+  | 360M | 16 | 97.9 (96.2-100.5) | 100.4 (97.8-101.8) | +3% |
+  | 360M | 1 | 269.9 (265.8-273.6) | 194.6 (191.5-195.8) | -28% |
+
+  The same ids and logit bits in every run. One thread gains what the local copy predicted (-27% to -30%); on 16
+  threads, bound by memory bandwidth, the new pin is 1-3% slower, inside overlapping ranges this time, so I read it as
+  no gain and possibly a small loss. I take the pin: one thread is much faster, 16 threads about the same, and the
+  package moves to the tensor-array that bend-ml supports now.
