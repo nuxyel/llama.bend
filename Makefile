@@ -24,12 +24,13 @@ laws:             ## the package's proofs, checked by bend and again by the kern
 	bend llama/main.bend --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK"
 	scripts/check_rejected.sh
 
-check: laws       ## the laws, prep, the Bend tokenizer against `tokenizers`; one layer, the forward and generation against transformers
+check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin
 	$(PY) reference/prep.py --check
 	mkdir -p .scratch
 	bend demo/tok.bend -o .scratch/tok
 	$(PY) reference/test_tok.py .scratch/tok
 	$(PY) reference/test_detok.py .scratch/tok
+	$(PY) reference/test_chat.py .scratch/tok
 	[ -f $(DIR)/test/inv_freq.bin ] || $(PY) reference/layer_ref.py
 	bend demo/layer_test.bend -o .scratch/layer_test
 	$(PY) reference/test_layer.py .scratch/layer_test
@@ -39,6 +40,8 @@ check: laws       ## the laws, prep, the Bend tokenizer against `tokenizers`; on
 	[ -f $(DIR)/test/gen.json ] || $(PY) reference/gen_ref.py
 	bend demo/gen.bend -o .scratch/gen
 	$(PY) reference/test_gen.py .scratch/gen
+	bend demo/sample_test.bend -o .scratch/sample_test
+	$(PY) reference/test_sample.py .scratch/sample_test .scratch/gen
 	$(PY) scripts/rts_probe.py .scratch/gen $(DIR) "Once upon a time" 24
 
 bits:             ## forward and gen give the same bits as the saved ones ($(DIR)/test/bits/; `bits.py save` writes them)
