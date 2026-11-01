@@ -55,6 +55,7 @@ programs are rejected.
 | `kv_room` | a cache made for `cap` positions holds every position below `cap` inside its arrays, so a write never wraps around onto position 0 |
 | `groups_len`, `kv_heads`, `arrays_len` | the query heads form exactly one group per key/value head, and an empty cache holds one array of keys and one of values per key/value head |
 | `head_split` | a head splits into the two halves that RoPE rotates together and joins back unchanged; the config stores half a head, so a head is always even |
+| `sample_below` | a token drawn with temperature, top-k and top-p is an id of the logits it was drawn from, whatever the settings and the draw |
 | `layout_135m`, `layout_360m`, `layout_1_7b` | the shapes the types give to the weights add up to the number of values in each checkpoint (134,515,008, 361,821,120 and 1,711,376,384); the loader stops on any file whose size differs from its type |
 
 Each one is explained at length in [`llama/README.md`](llama/README.md#the-laws-in-plain-language), next to the
@@ -77,7 +78,11 @@ All against `transformers` 5.19 in F32 with eager attention, by the scripts in [
 
 The tokenizer is written in Bend too (SmolLM2's digit split, the GPT-2 regex and 48,900 merges). It gives the same ids
 as `tokenizers` on 68 fixed texts and 600 random ones, and decodes like it on 1,500 random id sequences, most of them
-invalid UTF-8.
+invalid UTF-8. SmolLM2-Instruct's chat template, written in Bend on that tokenizer, gives the same ids as `transformers`'
+`apply_chat_template` on 13 conversations, with and without the generation prompt. Sampling (temperature, top-k, top-p,
+a seeded generator written in Bend) gives the same tokens and logit bits as a Python twin that repeats it operation
+for operation: 180 draws on made-up logits (1 to 49,152 of them, with and without ties) and 92 draws of the 135M,
+whose top-k candidates are also the top-k of `transformers`' logits for the same tokens.
 
 ## 04 · How it compares
 
@@ -113,7 +118,13 @@ make setup   # Bend 2.0.39 (SHA256-checked), Lean 4.34.0, the Python venv of ref
 make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checked
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
+./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
+./gen data/smollm2-135m --chat "What is the capital of France?" 32   # one user turn in the chat template
 ```
+
+Greedy is the default and `temperature 0` is greedy too. A seed gives the same tokens on every run, on one thread as
+on all of them (nothing is kept between draws). `--chat` wraps the prompt in SmolLM2-Instruct's template (default system message, then the user turn, then the
+assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well.
 
 The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
 Every loader reads the downloaded `model.safetensors` itself, so `make prep` writes no copy of the weights;
@@ -150,8 +161,12 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   ([`BENCHMARK.md`](BENCHMARK.md), 32 tokens): every product is a GPU call with a fixed cost of about 1 ms, and
   generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
   `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host memory.
-- Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
-  in their type, and the numerics are tested, never proved.
+- Base models only. The chat template is in (`--chat`), but `reference/models.py` does not pin the instruct checkpoints
+  yet, so a chat runs on a base model and answers like one. Sampling matches its Python twin, not `transformers`' own
+  sampler (whose random numbers are PyTorch's); it runs on the CPU path only (`gen_gpu.bend` stays greedy), needs a
+  top-k (k >= 1), and its cost grows with k (not timed yet). A special token written inside a chat message is encoded
+  as text. The vectors between layers are lists whose length is not in their type, and the numerics are tested, never
+  proved.
 
 ## Where things are
 
@@ -159,7 +174,7 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 |---|---|
 | [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`); the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
-| [`demo/`](demo/) | `gen.bend` (generation), `gen_gpu.bend` (the same on the GPU), `forward.bend` and `layer_test.bend` (what the tests read), the tokenizer |
+| [`demo/`](demo/) | `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read), the tokenizer and chat template |
 | [`tests/`](tests/) | programs that must not compile |
 | [`reference/`](reference/) | download and preparation, the `transformers` and `tokenizers` oracles, the tests |
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |
