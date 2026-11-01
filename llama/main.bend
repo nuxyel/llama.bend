@@ -13,7 +13,8 @@
 #   repeat_kv mapping (gqa_head);
 # - the key/value cache at position t has the type KV<t>: t positions written in flat arrays, so attention at
 #   position t scores exactly the positions 0..t and nothing after (causal, read_len);
-# - the shapes of the weights in the types add up to the number of values in the weight files (layout laws).
+# - the shapes of the weights in the types add up to the number of values in the weight files (layout laws);
+# - a token drawn with temperature, top-k and top-p is an id of the logits it was drawn from (sample_below).
 #
 # The order of every F32 operation follows transformers' modeling_llama.py (5.19), so the results match it to a
 # few ulps and the argmax exactly (llama.bend's NOTES.md).
@@ -1106,6 +1107,161 @@ def argmax(xs: List<&2, F32>) -> AM:
       AM{0n, 0.0}
     case Con{+h, +t}:
       argmax.go(t, gt_head(t, h), 1n, 0n, h)
+
+# =====================================================================================================
+# Sampling: temperature, top-k and top-p, with a seeded generator written in Bend
+# =====================================================================================================
+# Every step is an F32 operation in a fixed order, so reference/sample_ref.py repeats it bit for bit from the same
+# logits: the k largest logits (ties: the lower id first, as a stable sort), each divided by the temperature; their
+# weights exp(v/temp - top/temp) (top: the largest), summed in order into Z; top-p keeps each candidate whose
+# cumulative weight before it is below p·Z (the first is always kept), Zp their sum; a uniform u in [0, 1) picks the
+# first kept candidate whose cumulative weight is above u·Zp (the last kept one if rounding leaves none).
+
+# Chris Wellons' lowbias32 hash (public domain): xor-shifts and two odd multipliers, a bijection on U32
+def hash32(+x: U32) -> U32:
+  +a = U32.xor(x, U32.shrn(x, 16n))
+  +b = U32.mul(a, 2146121005)
+  +c = U32.xor(b, U32.shrn(b, 15n))
+  +d = U32.mul(c, 2221713035)
+  U32.xor(d, U32.shrn(d, 16n))
+
+# draw n of a seed, a uniform F32 in [0, 1): the top 24 bits of hash32(hash32(seed) + n), times 2^-24 (exact). Nothing
+# is kept between draws, so a seed gives the same draws whatever ran before.
+def uniform(+seed: U32, +n: U32) -> F32:
+  F32.mul(U32.to_f32(U32.shrn(hash32(U32.add(hash32(seed), n)), 8n)), 5.9604644775390625e-8)
+
+# a candidate: a logit and its id
+type Cand is Data:
+  Cand{v: F32, i: Nat}
+
+def Cand.i(c: Cand) -> Nat:
+  match c:
+    case Cand{v, i}:
+      i
+
+def Cand.v(c: Cand) -> F32:
+  match c:
+    case Cand{v, i}:
+      v
+
+# whether a value v goes before the head of cs: the head is smaller (an equal one keeps its place, ahead of v)
+def goes_before(cs: List<&2, Cand>, +v: F32) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{Cand{hv, hi}, t}:
+      F32.is_lt(hv, v)
+
+# v (id i) into the candidates cs, largest first; g: whether it goes before the head
+def ins(cs: List<&2, Cand>, g: Bool, +v: F32, +i: Nat) -> List<&2, Cand>:
+  match cs g:
+    case Nil{} _:
+      Cand{v, i} <> Nil{}
+    case Con{h, t} True{}:
+      Cand{v, i} <> (h <> t)
+    case Con{h, +t} False{}:
+      h <> ins(t, goes_before(t, v), v, i)
+
+# the value of the last candidate (lo if there is none)
+def last_v(cs: List<&2, Cand>, +lo: F32) -> F32:
+  match cs:
+    case Nil{}:
+      lo
+    case Con{Cand{v, i}, t}:
+      last_v(t, v)
+
+# whether the head of xs enters the candidates: there is room, or it is above the smallest one (lo)
+def enters(xs: List<&2, F32>, room: Bool, +lo: F32) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Con{+h, t}:
+      Bool.or(room, F32.is_gt(h, lo))
+
+# the k largest of xs (the values from id i on) and of the candidates cs, largest first; cs holds m <= k of them,
+# lo the smallest; g: whether the head of xs enters. One pass, and a value at or below lo costs one comparison.
+def topk.go(xs: List<&2, F32>, g: Bool, +k: Nat, +i: Nat, +m: Nat, +lo: F32, +cs: List<&2, Cand>) -> List<&2, Cand>:
+  match xs g:
+    case Nil{} _:
+      cs
+    case Con{h, +t} False{}:
+      topk.go(t, enters(t, Nat.is_lt(m, k), lo), k, 1n+i, m, lo, cs)
+    case Con{+h, +t} True{}:
+      +cs2 = List.take(&2, Cand, ins(cs, goes_before(cs, h), h, i), k)
+      +m2 = Nat.min(1n+m, k)
+      +lo2 = last_v(cs2, h)
+      topk.go(t, enters(t, Nat.is_lt(m2, k), lo2), k, 1n+i, m2, lo2, cs2)
+
+def topk(+k: Nat, +xs: List<&2, F32>) -> List<&2, Cand>:
+  topk.go(xs, enters(xs, Nat.is_lt(0n, k), 0.0), k, 0n, 0n, 0.0, Nil{})
+
+# the weight of a logit v: exp(v/temp - top/temp), top the largest logit (its weight is 1)
+def weight(+v: F32, +temp: F32, +top: F32) -> F32:
+  F32.exp(F32.sub(F32.div(v, temp), F32.div(top, temp)))
+
+# acc plus the weights of cs, in order
+def total(cs: List<&2, Cand>, +temp: F32, +top: F32, +acc: F32) -> F32:
+  match cs:
+    case Nil{}:
+      acc
+    case Con{Cand{+v, i}, t}:
+      total(t, temp, top, F32.add(acc, weight(v, temp, top)))
+
+# how many candidates top-p keeps (n) and their weight (z)
+type Kept is Data:
+  Kept{n: Nat, z: F32}
+
+# g: whether the head of cs is kept (the weight acc before it is below lim = p·Z; the first is always kept)
+def kept.go(cs: List<&2, Cand>, g: Bool, +temp: F32, +top: F32, +lim: F32, +n: Nat, +acc: F32) -> Kept:
+  match cs g:
+    case Nil{} _:
+      Kept{n, acc}
+    case Con{h, t} False{}:
+      Kept{n, acc}
+    case Con{Cand{+v, i}, t} True{}:
+      +acc2 = F32.add(acc, weight(v, temp, top))
+      kept.go(t, F32.is_lt(acc2, lim), temp, top, lim, 1n+n, acc2)
+
+# whether the draw stops at the head of cs: it is the last kept one (q = 0 kept after it), or the cumulative
+# weight acc plus its own is above the target u·Zp
+def stops(cs: List<&2, Cand>, +q: Nat, +temp: F32, +top: F32, +target: F32, +acc: F32) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{Cand{+v, i}, t}:
+      Bool.or(Nat.is_eq(q, 0n), F32.is_lt(target, F32.add(acc, weight(v, temp, top))))
+
+# the candidate drawn; s: whether it is the head of cs
+def pick.go(cs: List<&2, Cand>, s: Bool, +q: Nat, +temp: F32, +top: F32, +target: F32, +acc: F32) -> Cand:
+  match cs s:
+    case Nil{} _:
+      Cand{0.0, 0n}
+    case Con{h, t} True{}:
+      h
+    case Con{Cand{+v, i}, +t} False{}:
+      +acc2 = F32.add(acc, weight(v, temp, top))
+      pick.go(t, stops(t, Nat.sub(q, 1n), temp, top, target, acc2), Nat.sub(q, 1n), temp, top, target, acc2)
+
+def sample.pick(+cs: List<&2, Cand>, kp: Kept, +temp: F32, +top: F32, +u: F32) -> Cand:
+  match kp:
+    case Kept{+n, +z}:
+      pick.go(cs, stops(cs, Nat.sub(n, 1n), temp, top, F32.mul(u, z), 0.0), Nat.sub(n, 1n), temp, top, F32.mul(u, z), 0.0)
+
+def sample.cs(+cs: List<&2, Cand>, +temp: F32, +top: F32, +p: F32, +u: F32) -> Cand:
+  sample.pick(cs, kept.go(cs, True{}, temp, top, F32.mul(p, total(cs, temp, top, 0.0)), 0n, 0.0), temp, top, u)
+
+def top_of(cs: List<&2, Cand>) -> F32:
+  match cs:
+    case Nil{}:
+      0.0
+    case Con{Cand{v, i}, t}:
+      v
+
+# a token drawn from the logits xs (its id and logit) with temperature temp > 0, the k > 0 largest logits and top-p
+# p, by the uniform draw u
+def sample(+xs: List<&2, F32>, +temp: F32, +k: Nat, +p: F32, +u: F32) -> Cand:
+  +cs = topk(k, xs)
+  sample.cs(cs, temp, top_of(cs), p, u)
 
 # =====================================================================================================
 # Loading, in plain Bend: every tensor read from the downloaded <dir>/hf/model.safetensors itself, BF16 at the
