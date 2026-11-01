@@ -94,15 +94,11 @@ its slowest part; since 2026-10-16 it takes 9 s instead of 66. The 1.7B's totals
 llama.bend takes 426 ms per token at 16 threads. The machine, the versions and every number are in
 [`BENCHMARK.md`](BENCHMARK.md).
 
-<p align="center"><img src="docs/media/deck/frames/04-bend-release.webp" alt="The same commit built with Bend 2.0.36 and 2.0.37: no change beyond the spread" width="90%"></p>
-
-Bend 2.0.37 brings my fix for parallel code with an erased last parameter and a better spread of late forks over
-idle threads. Built with 2.0.36 and with 2.0.37, the same commit runs at the same speed: no def here had the shape that
-the fix is about, and the parallel heads gain nothing more on this machine.
-
 Bend 2.0.39 is faster than 2.0.38 on the same commit. On the 135M, idle machine, 5 alternated rounds (2026-10-24), a
 token takes 51.6 ms on 16 threads against 58.7, and 114 ms on one thread against 116, inside the spread. The program
-runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds).
+runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds). Earlier, built with
+2.0.36 and with 2.0.37 (which carries my fix for parallel code with an erased last parameter), the same commit ran at
+the same speed: no def here had the shape that fix is about.
 
 ## 05 · Reproduce
 
