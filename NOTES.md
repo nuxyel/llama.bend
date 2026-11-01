@@ -1286,3 +1286,22 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   threads, bound by memory bandwidth, the new pin is 1-3% slower, inside overlapping ranges this time, so I read it as
   no gain and possibly a small loss. I take the pin: one thread is much faster, 16 threads about the same, and the
   package moves to the tensor-array that bend-ml supports now.
+
+## The plain-Bend loader reads model.safetensors (2026-11-01)
+
+- `llama/main.bend`'s loader (`load_model`, `load_lw`) reads every tensor from `hf/model.safetensors` at `w/st.txt`'s
+  offsets, as `load.bend` and `gpu.bend` have since 2026-10-25, but in plain Bend: `File.read_at` in 1 MB blocks,
+  two bytes per number written straight into the band's array as the F32 whose upper half they are (exact). No
+  foreign code, so `--verdict` still checks the file. `File.read_at` takes a U32 offset, so a tensor must lie in the
+  file's first 4 GiB (the 1.7B's file is 3.4 GB); each tensor's span is checked against the file's size first, and a
+  short or wrong `w/st.txt` stops the program with a message. The API is unchanged; `load_lw` reads `w/st.txt` itself.
+- `make prep` no longer writes the F32 copies (`F32=0` is the default): nothing here reads them. `F32=1` still
+  writes them for `bend-ml-llama@0.2.0.0`, whose loader reads `w/<name>.bin`; `prep --check` verifies them only then.
+- The same numbers: `layer_test` built before and after gives byte-identical output on the three cases of the 135M,
+  the 360M and the 1.7B (16 threads; the 135M also on one), and the same with a model directory holding only
+  `hf/`, `cfg.txt` and `w/st.txt`. `make check` (laws and `--verdict`, the layer test against transformers),
+  `make bits` on 16 threads and on one (identical), `test_gen` on the 360M and the 1.7B (0 failures each), and
+  `par_att`'s two joins still in the C. No timing (busy machine).
+- The package changes (`llama/main.bend`), so the next `bend-ml-llama` is 0.2.1.0: the API is the same, but a
+  model directory needs `w/st.txt` (`prep.py --index` for one prepared before 2026-10-25). Not published yet; the
+  READMEs keep `0.2.0.0` until it is.
