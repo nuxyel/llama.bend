@@ -1110,3 +1110,16 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
   2.0.36-vs-2.0.37 slide, so the flat-cost and start-up frames are now `04-` and `05-`.
 - Not measured: the unmerged BF16 plain-Bend loader (it changes `main.bend`'s loader, which only `layer_test` uses, so
   a load-time note needs its own program); the 1.7B on the GPU.
+
+## bend-lint's eager_branch and repeated_call fixed (2026-11-01)
+
+- `ids_ok` (`demo/tok.bend`, the merges-table check in `gen` and `gen_gpu`) computed `ids_ok` of the rest even after a
+  bad rule had decided the result, so the walk always reached the end of the table. Now `ids_go` takes the check of the
+  previous rule as a parameter and matches it before going on, the shape bend-lint suggests inside a loop (a helper
+  that branched first would have to call the loop back, and Bend has no mutual recursion). The result is the same; on
+  a malformed table the walk stops at the first bad rule, and it is now a tail loop.
+- `ws3` called `lcl(run, 0n)` twice; it binds it once (`+l`).
+- Both directives are gone: `make lint` gives 0 findings, 11 suppressed (13 before). The same bits: `make bits`
+  identical on 16 threads and on one, `test_tok`/`test_detok` and `test_gen` on the 135M pass, with the malformed
+  tables still refused. No timing: the before/after on the 135M waits for a run on an idle machine (both findings were
+  left as cheap before: binding `lcl` once measured no change on 2026-10-16, and the table check runs once per run).
