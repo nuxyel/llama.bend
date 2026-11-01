@@ -108,7 +108,7 @@ Optional, after 8: read `model.safetensors` directly in Bend (bf16 → F32 is a 
 Python; decided after measuring, since `File.read_at` is the cost of loading (bend-ml exp. 13). **Half done
 2026-10-25**: the demos' loader (`llama/load.bend`) and the GPU path read every tensor from `hf/model.safetensors`,
 BF16 at the offsets in `w/st.txt`, with `bend-ml-binary-read` (NOTES). Left: the plain-Bend loader in
-`llama/main.bend` (what `layer_test` and `prep --check` use) still reads the F32 copies, so `make prep` still writes
+`llama/main.bend` (what `layer_test` uses) still reads the F32 copies, so `make prep` still writes
 them; and `prep.py` still writes `cfg.txt`, the tokenizer tables and `w/st.txt`, so running still needs Python once.
 
 ## Risks and open questions
