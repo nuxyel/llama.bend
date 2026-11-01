@@ -29,8 +29,8 @@ and in this file's git history.
 4. `BENDRTS="--threads 1" make bits`: the same check on one thread, which runs attention's sequential order.
 5. `reference/test_gen.py .scratch/gen` with `MODEL=smollm2-360m` and with `MODEL=smollm2-1.7b`: the twelve prompts,
    0 failures. The 1.7B takes about half an hour and 7 GB; run it alone.
-6. The emitted C (`bend demo/gen.bend -o gen.c`) still has `par_att`'s two joins (`..._par_att_j75` and `_j78` on
-   2.0.39; the numbers move with the compiler).
+6. The emitted C (`bend demo/gen.bend -o gen.c`) still has `par_att`'s two joins (`..._par_att_j76` and `_j79` at
+   v1.4.2 on 2.0.39; the numbers move with the code and the compiler).
 
 ## 3. Text
 
