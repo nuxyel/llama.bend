@@ -1,91 +1,59 @@
-# Release checklist: Bend 2.0.37 and the first public version
+# Release checklist
 
-Status on 2026-10-13: done. `bend-ml-llama@0.1.0.0` published (`0x60692cfeaba1e21c25f3b68061e41fea`, checked from a
-scratch directory: the same output as the local copy), the repository public, `v1.0.0` tagged on `main` with
-`llama.bend.mp4` on its release, bend-ml's README links it. Left: the posts (7.1), and bend-ml's `v1.2.4` tag.
+The steps for a Bend bump and for a release of llama.bend, in order. A step that fails stops the list. Steps marked
+**Renan** are his decision or his action: the agent does not publish to BendHub, tag a release, merge into `main` or
+post. Each run of this list gets a dated `NOTES.md` entry with what the checks reported.
 
-The steps from a new Bend release to llama.bend public and `bend-ml-llama` on BendHub, in order. A step that fails
-stops the list. Steps marked **Renan** are his decision or his action: the agent does not make the repository
-public, publish to BendHub, tag a release or post.
+The first public version (Bend 2.0.37, `v1.0.0` and `bend-ml-llama@0.1.0.0`, 2026-10-13) went through an earlier,
+longer version of this list, with the launch media and the move to a fresh repository; that history is in `NOTES.md`
+and in this file's git history.
 
-## 1. The pin
+## 1. The pin (a Bend bump only)
 
-1. Read the release notes (`gh release view v2.0.37 -R bendlang/bend`): breaking changes in Base or the syntax, and
-   whether `--verdict` needs a new Lean.
-2. `scripts/bump_bend.sh 2.0.37`: downloads the two Linux tarballs, computes their SHA256 and rewrites the pin in
-   `scripts/setup.sh`, the CI step, the READMEs and CLAUDE.md. Check its diff; it touches pins only.
-3. `make setup` installs it; `bend version` says 2.0.37.
+1. Read the release notes (`gh release view v2.0.N -R bendlang/bend`): breaking changes in Base or the syntax, a
+   change in how parallel lets are compiled or scheduled, and whether `--verdict` needs a new Lean.
+2. `scripts/bump_bend.sh 2.0.N`: downloads the two Linux tarballs, computes their SHA256 and rewrites the pin in
+   `scripts/setup.sh`, the CI step, the READMEs, CONTRIBUTING and CLAUDE.md. Check its diff; it touches pins only.
+3. `make setup` installs it; `bend version` says 2.0.N.
+4. CLAUDE.md, "pitfalls": read the release notes against each pitfall; one the release fixes becomes history, with
+   the issue or pull request that fixed it.
 
 ## 2. No regression
 
-1. `make laws`: the checker and `--verdict`, both `ALL PROOFS CHECK`, no `@unsafe`, no `?TODO`.
+1. `make laws`: the checker and `--verdict`, both `ALL PROOFS CHECK`, no `@unsafe`, no `?TODO`, both
+   `tests/bad_*.bend` rejected with their own error, `main.bend` free of foreign code.
 2. `make check` on the 135M: prep, the tokenizer against `tokenizers`, the layer test, the forward pass and the
-   twelve generations against `transformers`, 0 failures.
-3. `make bits`: every output of the 135M identical to the saved bits. #1377 and #1479 change how parallel lets are
-   compiled and scheduled, not the order of any sum, so the bits should not move; if one does, find out why before
-   anything else, and only then `bits.py save`.
-4. The same bits check with `--threads 1` (wrappers that pass it), which runs attention's sequential order.
-5. `MODEL=smollm2-360m` and `MODEL=smollm2-1.7b`: `reference/test_gen.py` on the twelve prompts, 0 failures. 
-   1.7B takes about half an hour; run it alone.
-6. The emitted C (`bend demo/gen.bend -o gen.c`) still has `par_att`'s two joins.
+   twelve generations against `transformers`, 0 failures, and the thread probe (1 thread on one core, 16 on several).
+3. `make bits`: every output of the 135M identical to the saved bits. A bump or a refactor that keeps the order of
+   every sum must not move a bit; if one moves, find out why before anything else, and only then `bits.py save`.
+4. `BENDRTS="--threads 1" make bits`: the same check on one thread, which runs attention's sequential order.
+5. `reference/test_gen.py .scratch/gen` with `MODEL=smollm2-360m` and with `MODEL=smollm2-1.7b`: the twelve prompts,
+   0 failures. The 1.7B takes about half an hour and 7 GB; run it alone.
+6. The emitted C (`bend demo/gen.bend -o gen.c`) still has `par_att`'s two joins (`..._par_att_j75` and `_j78` on
+   2.0.39; the numbers move with the compiler).
 
 ## 3. Text
 
-1. CLAUDE.md, "pitfalls": the erased-last-parameter pitfall becomes history (fixed in 2.0.37 by #1377); keep the
-   advice to check the joins in the C.
-2. NOTES.md: a dated entry for the bump, with what the checks above reported.
-3. `BENCHMARK.md` stays dated (2026-10-12, Bend 2.0.36) until the next measurement; say so in the README if the
-   release goes out before it.
+1. NOTES.md: the dated entry, with what the checks above reported.
+2. `BENCHMARK.md` and the README's numbers stay dated until the next measurement on an idle machine; a number measured
+   on a busy machine goes to NOTES at most.
+3. A release that changes the package (`llama/`) bumps `bend-ml-llama`'s version where the READMEs write it, and
+   NOTES says why.
 
 ## 4. bend-ml
 
-The same bump in bend-ml, with its own checklist (bend-ml `NOTES.md`, "Checklist for the bump to the release that
-carries #1377"): `make check-full`, the C join check of `bmv`, the workaround comment retired. Its packages are
-republished only if their source changes.
+On a Bend bump, the same bump in bend-ml, with its own checklist (bend-ml's `docs/` and `NOTES.md`). Its packages are
+republished only if their source changes, and llama.bend moves to a new pin only after it is on BendHub.
 
-## 4b. The README and the launch video
+## 5. The release (Renan)
 
-In the identity of bend-ml's (its `docs/media/`: `shoot.mjs` for terminal screenshots of real runs, `charts.mjs` for
-the banner and the diagram from measured numbers, `deck.mjs` with a `readme.mjs` for the result frames,
-`render_video.mjs` for the video: a scene rendered frame by frame in headless Brave at 60 fps, blended to 30 with
-motion blur, encoded with ffmpeg, plus a poster and a webp teaser), a `docs/media/` here and a `make media`:
-
-1. The README rewritten around the results, like bend-ml's latest: a banner, badges, numbered sections, a terminal
-   shot of a real generation, the laws in a few lines, the frames for the benchmark (from `BENCHMARK.md`) and the flat
-   per-token cost, reproduce, limits.
-2. A launch video for v1.0 (attached to the release, not committed): what llama.bend is, a model generating in the
-   terminal, the types that reject a wrong weight, the laws, the numbers with their losses.
-3. Every number in both comes from `BENCHMARK.md` or a captured run; nothing typed by hand.
-
-## 5. Public (Renan)
-
-1. Done on 2026-10-13: `nuxyel/legacy-llama.bend` (the old one, private), a new private `nuxyel/llama.bend` with `main`,
-   `devel`, the tags and the v0.0.1 and v0.0.2 releases, the local clone's `origin` pointing at it (`legacy` at the old
-   one). Read the README, the package README, `BENCHMARK.md` and `docs/` once more as a stranger would. Tracked files
-   name no private repository and describe no measurement method, and since 2026-10-12 neither does the history
-   (rewritten with git filter-repo; every tree on `devel` unchanged; the old -> new commit map is kept privately).
-   GitHub still keeps the pull requests #1 and #2 (the v0.0.1 and v0.0.2 releases) pointing at the old commits, so
-   this repository does not go public. Decided on 2026-10-12: rename it `legacy-llama.bend` (it stays private),
-   create a new `nuxyel/llama.bend` (private until the launch), push `devel`, `main` and the tags (the rewritten
-   history, so the commits cited in `BENCHMARK.md` and `NOTES.md` exist), recreate the v0.0.1 and v0.0.2 releases
-   with the same notes, and point the local clone at it.
-2. Make the repository public; bend-ml's README links it.
-3. A pull request `devel` → `main`, then the tag `v1.0.0` on `main`: by bend-ml's `docs/VERSIONING.md`, 1.0 is the
-   first stable, reproducible release that matches the reference (decided 2026-10-12). The BendHub package keeps
-   its own number, `bend-ml-llama@0.1.0.0`.
-
-## 6. BendHub (Renan)
-
-1. The API: `cap` is in `KV`'s type since 2026-10-12 (NOTES, "the capacity in the cache's type"), so the first
-   version publishes it. Publishing is permanent; a later signature change is a new version that breaks callers.
-2. `bend login` (GitHub), then from `llama/`: `bend main.bend --publish bend-ml-llama@0.1.0.0`. The name has 12+
-   characters, the version four numbers, `LICENSE` sits next to `main.bend`, and the imports are BendHub packages at
-   pinned versions.
-3. Check the published package from a scratch directory: `import bend-ml-llama@0.1.0.0/main.bend as M` and a
-   forward pass on the 135M.
-
-## 7. After
-
-1. Posts (drafts prepared, Renan posts): X in English, LinkedIn in Portuguese.
-2. The next measurement, on an idle machine on mains power: the current commit on 2.0.36 and on 2.0.37 in the same
-   session, so the release's effect is measured on its own (one build per Bend version).
+1. A pull request `devel` → `main` (CI green), merged.
+2. The tag `v1.X.Y` on `main` (bend-ml's `docs/VERSIONING.md`: a patch for fixes, docs and checks, a minor for a new
+   capability, a major only for a change in what the project is), and a GitHub release with the notes: what changed,
+   what the checks reported, and whether `bend-ml-llama` changed.
+3. BendHub, only if `llama/` changed: `bend login` (GitHub), then from `llama/`:
+   `bend main.bend --publish bend-ml-llama@0.X.Y.Z` (12+ characters, four numbers, `LICENSE` next to `main.bend`, the
+   imports BendHub packages at pinned versions). Publishing is permanent; a signature change is a new version that
+   breaks callers. Then check the published package from a scratch directory: `import
+   bend-ml-llama@0.X.Y.Z/main.bend as M` and a forward pass on the 135M.
+4. Posts, if any: drafts prepared, Renan posts (X in English, LinkedIn in Portuguese).
