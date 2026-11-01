@@ -1173,3 +1173,15 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
   1.036 → 0.778 s, 1.7B 3.84 → 3.04 s on one thread (-21% to -26%), -22% to -23% on 16. Ids and logit bits unchanged,
   `make bits` and `make check` pass. The package's own loader in `llama/main.bend` has the same tree; changing it means
   republishing `bend-ml-llama`, so it waits for the release after v1.4.2.
+
+## v1.4.2 release (2026-11-01)
+
+- The gates of the morning ran on the code before `543d04c` (the demos' loader), which `gen` and `forward` use, so the
+  checklist ran again on `8a01091`, Bend 2.0.39, a busy machine (no timing taken): `make laws` (`ALL PROOFS CHECK` from
+  bend and from `--verdict`, both bad programs rejected with their own error), `make check` and `make bits` on the 135M
+  (0 failures, every output identical), `BENDRTS="--threads 1" make bits` (identical), `reference/test_gen.py` on the
+  360M and on the 1.7B, run alone (12 prompts and the two malformed tables each, 0 failures), and the emitted C still
+  has `par_att`'s two joins (`..._par_att_j76` and `_j79`).
+- `bend-ml-llama` is not republished: the package is `llama/main.bend` and what it imports (tensor-array only), unchanged
+  since 0.2.0.0 was published on 2026-10-21. `llama/load.bend` changed, but it is the demos' loader and never imported
+  from `main.bend`, so it is not in the package. The same change in `main.bend`'s loader waits for the next release.
