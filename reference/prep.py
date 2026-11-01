@@ -4,18 +4,19 @@ smollm2-135m), downloaded at its pinned revision into data/<MODEL>/.
   reference/.venv/bin/python reference/prep.py          download (pinned revision) and write data/<MODEL>/
   reference/.venv/bin/python reference/prep.py --check  verify what is in data/<MODEL>/
   reference/.venv/bin/python reference/prep.py --index  write w/st.txt alone (a model prepared before it existed)
-  F32=0 reference/.venv/bin/python reference/prep.py    without the F32 copies (w/<name>.bin): enough for gen,
-                                                       forward and bench, which read hf/model.safetensors; make check
-                                                       needs them (main.bend's loader, layer_test)
+  F32=1 reference/.venv/bin/python reference/prep.py    also the F32 copies (w/<name>.bin), which only
+                                                       bend-ml-llama 0.2.0.0's loader reads: every loader here reads
+                                                       hf/model.safetensors at w/st.txt's offsets
 
 Writes to data/<MODEL>/:
   hf/            config.json, tokenizer.json, model.safetensors as downloaded
-  w/<name>.bin   one little-endian float32 file per tensor, row = output (the PyTorch Linear layout), the layout
-                 main.bend's plain-Bend loader reads; names in WEIGHTS below
   w/st.txt       where each tensor's BF16 data starts in hf/model.safetensors, one line per tensor in weights()
                  order (the order the loaders walk: emb, then each layer's ln1 q k v o ln2 gate up down, then lnf):
-                 "<hi> <lo>", the byte offset hi * 2^32 + lo; load.bend and gpu.bend read the BF16 numbers from there
-                 (bend-ml-binary-read's read_bf16_at), widened exactly to the F32 numbers of w/<name>.bin
+                 "<hi> <lo>", the byte offset hi * 2^32 + lo; every loader reads the BF16 numbers from there, widened
+                 exactly to F32 (main.bend with File.read_at, load.bend and gpu.bend with bend-ml-binary-read's
+                 read_bf16_at)
+  w/<name>.bin   with F32=1 only: one little-endian float32 file per tensor, row = output (the PyTorch Linear
+                 layout), the layout bend-ml-llama 0.2.0.0's loader reads; names in weights() below
   merges_num.txt one BPE rule per line, "a b" in the bend-ml scheme (byte b -> b, the token of rule k -> 256 + k)
   ids.txt        the model id of every symbol of that scheme: 256 bytes, then one per rule; -1 for the 21 bytes
                  that have no token (0xC0, 0xC1, 0xF5-0xFF and six control bytes): `tokenizers` drops them
@@ -33,7 +34,7 @@ import bpe_ref
 
 from models import REPO, REV, D, HF, W, config
 
-F32 = os.environ.get("F32", "1") != "0"  # write w/<name>.bin (main.bend's plain-Bend loader reads them)
+F32 = os.environ.get("F32", "0") != "0"  # also write w/<name>.bin (only bend-ml-llama 0.2.0.0's loader reads them)
 
 # the GPT-2 regex of the ByteLevel pre-tokenizer (use_regex = true)
 GPT2_PAT = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -192,10 +193,10 @@ def check():
     import torch
     ok = True
     c = config()
-    # 1. weights: bit for bit, shapes, total (skipped with F32=0, when there are no copies)
+    # 1. the F32 copies (F32=1 only): bit for bit, shapes, total
     total = 0
     if not F32:
-        print("weights: no F32 copies (F32=0); the loaders of gen, forward and bench read model.safetensors")
+        print("weights: no F32 copies to check (F32=1 writes them); every loader reads model.safetensors")
     with safe_open(os.path.join(HF, "model.safetensors"), "pt") as f:
         for short, name, shape in (weights(c) if F32 else []):
             t = f.get_tensor(name)
