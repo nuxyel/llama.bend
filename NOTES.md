@@ -1305,3 +1305,65 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
 - The package changes (`llama/main.bend`), so the next `bend-ml-llama` is 0.2.1.0: the API is the same, but a
   model directory needs `w/st.txt` (`prep.py --index` for one prepared before 2026-10-25). Not published yet; the
   READMEs keep `0.2.0.0` until it is.
+
+## Chat template and sampling (2026-11-01)
+
+### The chat template
+
+- Source: `chat_template` in `tokenizer_config.json` of `HuggingFaceTB/SmolLM2-135M-Instruct` (`12fd25f7`),
+  `-360M-Instruct` (`a10cc151`) and `-1.7B-Instruct` (`31b70e2e`), the same text in the three; I downloaded only that
+  file, `tokenizer.json` and `generation_config.json` (2 MB), no weights. Their `tokenizer.json` is the base models'
+  file byte for byte (sha256 `9ca9acdd...`), so the template runs on the tokenizer already in `data/<MODEL>/hf`.
+  `reference/models.py` pins the three revisions and the template text; `test_chat.py --hub` downloads the 4 KB
+  config again and checks the text (network, so not in `make check`).
+- The template: each message is `<|im_start|>role\ncontent<|im_end|>\n`, a default system message ("You are a
+  helpful AI assistant named SmolLM, trained by Hugging Face") comes first when the first message is not a system one,
+  and `<|im_start|>assistant\n` opens the answer. `tokenizers` matches the special tokens (ids 1 and 2, no lstrip or
+  rstrip) before the pre-tokenizer, so the ids are `1, encode(role + "\n" + content), 2, encode("\n")` per message:
+  `demo/tok.bend`'s `chat_ids` builds exactly that on `encode_text`.
+- `reference/test_chat.py`: 13 conversations (system or not, several turns, an empty message, an empty system message,
+  a system message after the first, a `tool` role, newlines, tabs, accents, CJK, emoji, code), each with and without
+  the generation prompt, against `apply_chat_template(tokenize = True)`: 26 of 26 identical.
+- Two differences, left as they are: `transformers` refuses an empty conversation, where `chat_ids` gives the
+  generation prompt alone; a special token written inside a message is matched by `tokenizers` and encoded as text by
+  Bend (the tokenizer's old limit).
+- `gen --chat "message" n` wraps the prompt as one user turn and stops after `<|im_end|>` (id 2) as well as id 0. The
+  instruct weights are not prepared: that needs a `models.py` entry and `make prep` (the 135M-Instruct is 269 MB), left
+  for later, so a chat runs on a base model for now.
+
+### Sampling
+
+- `llama/main.bend`'s `sample(xs, temp, k, p, u)`, in this order, each step one F32 operation: the `k` largest logits
+  in one pass over the list (a sorted list of at most `k`; a value at or below the smallest kept costs one
+  comparison), ties in id order; weights `exp(v/temp - top/temp)`, `top` the largest; `Z` their sum in order; top-p
+  keeps each candidate whose cumulative weight before it is below `p·Z` (the first always); the draw is the first kept
+  candidate whose cumulative weight is above `u·Zp`, the last kept one if rounding leaves none.
+- Against `transformers`: the same three filters, but top-k runs on the raw logits and the temperature after it
+  (`transformers` divides first; the sets differ only if the division makes a tie at the k-th value), and top-p works
+  on unnormalized weights with the same rule (the smallest prefix whose mass reaches p). Token-level equality with
+  `transformers`' sampler is not possible anyway: its random numbers are PyTorch's.
+- The generator is a hash, Chris Wellons' lowbias32: draw `n` of a seed is the top 24 bits of
+  `hash32(hash32(seed) + n)` times 2^-24, exact in F32, in [0, 1). Nothing is kept between draws, so the n-th
+  generated token always uses draw n.
+- Bit-identical in Python: Bend's `F32.exp` compiles to `(f32)exp(x)`, the C library's double `exp` rounded to F32
+  (read in the emitted C), which `math.exp` (the same libm) and `np.float32` repeat; the C is built with `-std=c11 -O3`
+  and no `-march`, so nothing is fused into an FMA. `reference/sample_ref.py` is the twin.
+- `gen <dir> "prompt" n <temp> <top_k> <top_p> <seed>`: `temp 0` is greedy, `top_k >= 1` and `0 < top_p <= 1` are
+  required. The greedy path is the old `argmax` call, unchanged: `make bits` identical on the 135M, `test_gen` passes
+  on the 135M, 360M and 1.7B.
+- **Law `sample_below`**: with at least one logit, the drawn id is below their number. The proof never looks at an
+  F32: every comparison is a `Bool` the lemmas range over. Two mutations checked that it is not vacuous: an insertion
+  that stores `i + 1`, and a draw that falls back to id 3 on an empty list, are both rejected. `--verdict` passes.
+- `reference/test_sample.py` (in `make check`): `demo/sample_test.bend` draws 180 times from logits made by the hash
+  (16 cases, 1 to 49,152 logits, with and without ties, `k` from 1 to above the vocabulary, `p` from 0.05 to 1, `temp`
+  from 0.01 to 100): every id and logit bit equal to the Python twin's. On the 135M with `GEN_CANDS=1`, 6 runs (5
+  prompts and one chat, 92 draws): every draw equal to the twin's on the candidates Bend printed, and the candidates
+  the top-k of `transformers`' logits for the same tokens within 9.7e-6; the same seed gives the same 16 tokens on one
+  thread and on the default count; temp 0 gives `gen.json`'s greedy tokens; five invalid settings are refused.
+- What the test does not see: it compares choices. A tie-order mutation in the twin fails 7 of the 16 synthetic
+  cases, but replacing the twin's `exp` with NumPy's F32 `exp`, or its `<` with `<=` in the draw, changes no draw here:
+  an ulp in a weight rarely moves a choice.
+- Not done: sampling on the GPU path (`gen_gpu.bend` stays greedy); no timing (the machine was busy), so the cost of the
+  top-k pass, which grows with `k`, is not measured.
+- `make lint`: 0 findings, 12 suppressed. Of the two new `eager_branch` findings, `bytes_eq` (the chat template's role
+  check) now stops at the first difference, and `below` is suppressed: it only appears in the laws' types.
