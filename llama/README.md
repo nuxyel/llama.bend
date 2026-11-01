@@ -73,8 +73,8 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `BR.then`, `Out.then` | continue with the fields of a result; a loop over positions recurses inside them |
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
-| `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model written by `prep.py` (`<dir>/w/<name>.bin`, little-endian F32, one file per tensor) |
-| `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (BF16 widened exactly to F32, at the offsets `prep.py` writes into `w/st.txt`; the 1.7B in about 8 s instead of 60-70). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean, and `make bits` checks that both loaders give the same outputs |
+| `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model prepared by `prep.py`, in plain Bend: every tensor read from the downloaded `<dir>/hf/model.safetensors` with `File.read_at`, BF16 widened exactly to F32, at the byte offsets `prep.py` writes into `<dir>/w/st.txt` (since 0.2.1.0; 0.2.0.0 read F32 copies, `<dir>/w/<name>.bin`, which `make prep F32=1` still writes) |
+| `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (the same numbers as `main.bend`'s loader, faster: the 1.7B in about 8 s instead of 60-70 with the F32 copies). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean |
 
 An `Array` has a single owner, so every product hands its matrix back (`block` returns its `LW`, `forward` its
 `Model`). `Act` holds every intermediate of a layer (`n1`, `q`, `k`, `v`, `qr`, `kr`, `attn`, `a`, `n2`, `m`,

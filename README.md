@@ -104,8 +104,8 @@ the same speed: no def here had the shape that fix is about.
 
 ## 05 · Reproduce
 
-Linux x86_64 (or WSL), clang, Python 3.14 (the version the pinned dependencies were tested with), `curl`. About 2 GB
-of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.9 GB for the model's files.
+Linux x86_64 (or WSL), clang, Python 3.14 (the version the pinned dependencies were tested with), `curl`. About 1.6 GB
+of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.4 GB for the model's files and the test data.
 
 ```bash
 git clone https://github.com/nuxyel/llama.bend.git && cd llama.bend
@@ -116,8 +116,9 @@ bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 
 ```
 
 The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
-`make prep F32=0` skips the F32 copies of the weights: generation reads the downloaded `model.safetensors` itself,
-so that is enough to run `gen` (6.4 GB less for the 1.7B), but not `make check`, whose plain-Bend loader reads them.
+Every loader reads the downloaded `model.safetensors` itself, so `make prep` writes no copy of the weights;
+`make prep F32=1` also writes the F32 copies (`w/<name>.bin`, 6.4 GB for the 1.7B) that `bend-ml-llama@0.2.0.0`'s
+loader reads.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python

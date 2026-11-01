@@ -1,7 +1,7 @@
 # The fast weight loader: the same model as main.bend's load_model, read from the downloaded hf/model.safetensors
 # itself. Every matrix band and norm is read by bend-ml-binary-read's read_bf16_at straight into its Array, each BF16
-# number widened exactly to F32, at the byte offset that reference/prep.py wrote into w/st.txt (no F32 copy needed: the
-# numbers are those of w/<name>.bin, which main.bend's plain-Bend loader reads).
+# number widened exactly to F32, at the byte offset that reference/prep.py wrote into w/st.txt: the numbers that
+# main.bend's plain-Bend loader reads from the same file with File.read_at, faster.
 #
 #   import ../llama/main.bend as M
 #   import ../llama/load.bend as L

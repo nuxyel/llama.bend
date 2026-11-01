@@ -11,7 +11,7 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
 - `docs/plan.md`: the milestones, each with its pass criterion, and the laws to prove.
 - `NOTES.md`: every finding, measurement and decision, by date. Read it before changing anything.
 - `llama/main.bend`: the typed package (future `bend-ml-llama`): `Cfg`, `LW<c>`, `Model<c>`, `KV<cap, t>`, `block`,
-  `forward`, the loader and every law; `llama/README.md` explains the laws. `make laws` runs bend and `--verdict`.
+  `forward`, the loader (plain Bend, BF16 from `hf/model.safetensors` at `w/st.txt`'s offsets) and every law; `llama/README.md` explains the laws. `make laws` runs bend and `--verdict`.
 - `llama/load.bend`: the loader the demos use, the same model read from `hf/model.safetensors` (BF16, at `w/st.txt`'s
   offsets) with `bend-ml-binary-read` (foreign code, C and JS). Never import it, or binary-read, from `main.bend`: `--verdict` would fail (`make laws` checks it).
 - `llama/gpu.bend`: generation with the products on the GPU through bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.5.1` from BendHub; it
@@ -20,7 +20,8 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
 - `demo/`: programs on the package (`forward.bend`, `gen.bend`, `layer_test.bend`, which take the model
   directory as their first argument) and the SmolLM2 tokenizer (`tok.bend`, `unicode.bend`).
 - `reference/`: the Python side: `models.py` (the pinned models; `MODEL=` picks one), `prep.py` (download,
-  bf16 → F32, `cfg.txt`, tokenizer tables, `--check`), the `transformers` oracles (`*_ref.py`), the tests
+  `w/st.txt`, `cfg.txt`, tokenizer tables, `--check`; `F32=1` also writes the F32 copies `w/<name>.bin` that only
+  `bend-ml-llama@0.2.0.0` reads), the `transformers` oracles (`*_ref.py`), the tests
   (`test_*.py`) and `bits.py` (exact outputs, to show a refactor changes no bit: `make bits`).
 - `data/<MODEL>/` (not committed): what `make prep MODEL=...` downloads and writes (default `smollm2-135m`).
 - bend-ml (`~/Repos/Bend2/bend2-ml`, https://github.com/nuxyel/bend-ml) is the parent project: its packages are
