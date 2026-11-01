@@ -324,8 +324,8 @@ def ws3(+run: List<&2, U32>, +rest: List<&2, U32>, ends: Bool, +n: Nat) -> List<
     case True{}:
       (run, rest)
     case False{}:
-      # bend-lint: disable-next bend-lint-rules/performance/repeated_call -- lcl walks one whitespace run, which is short not-expected-because: binding it once measured no change (NOTES 2026-10-16)
-      ws4(Nat.is_lt(lcl(run, 0n), n), run, rest, n, lcl(run, 0n))
+      +l = lcl(run, 0n)
+      ws4(Nat.is_lt(l, n), run, rest, n, l)
 
 # a run that ends the text, or ends right before a digit, is taken whole: SmolLM2 splits every digit off
 # first, so the regex sees the run at the end of its segment and \s+(?!\S) matches all of it
