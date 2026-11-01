@@ -1,0 +1,114 @@
+# model	round	variant	threads	ms_per_token	instructions_u	md5(ids, logit bits)[:12] (32 tokens)
+# new/new2: w4/load-perf; dot4/dot4b: the same with a local copy of bend-ml-tensor-array@0.1.14.0 carrying bend-ml cf00ab1's dotg (not committed)
+# preflight smollm2-135m 14:07:50
+# ok     loadavg              0.55
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 1%
+# preflight: busy (other_processes): timings from this machine now are not results
+smollm2-135m	1	dot4	1	80.10	56264449329	acd327c250a0
+smollm2-135m	1	new	1	112.23	66513186227	acd327c250a0
+smollm2-135m	1	dot4	16	52.74	65102450988	acd327c250a0
+smollm2-135m	1	new	16	50.84	73093778980	acd327c250a0
+smollm2-135m	2	new	16	51.94	74734685728	acd327c250a0
+smollm2-135m	2	new	1	114.29	66511074528	acd327c250a0
+smollm2-135m	2	dot4	16	54.16	64442903731	acd327c250a0
+smollm2-135m	2	dot4	1	79.90	56274083521	acd327c250a0
+smollm2-135m	3	dot4	16	54.42	64458508770	acd327c250a0
+smollm2-135m	3	dot4	1	81.26	56264444109	acd327c250a0
+smollm2-135m	3	new	16	54.19	76001798401	acd327c250a0
+smollm2-135m	3	new	1	118.84	66502506907	acd327c250a0
+smollm2-135m	4	new	1	116.35	66502510854	acd327c250a0
+smollm2-135m	4	new	16	52.55	73981470820	acd327c250a0
+smollm2-135m	4	dot4	1	81.35	56264446757	acd327c250a0
+smollm2-135m	4	dot4	16	54.00	64756990977	acd327c250a0
+smollm2-135m	5	dot4	16	53.58	63976722338	acd327c250a0
+smollm2-135m	5	new	16	53.81	73702371197	acd327c250a0
+smollm2-135m	5	dot4	1	81.68	56264448334	acd327c250a0
+smollm2-135m	5	new	1	122.90	66502509599	acd327c250a0
+smollm2-135m	6	new	16	52.42	75427442103	acd327c250a0
+smollm2-135m	6	dot4	16	54.16	64764119365	acd327c250a0
+smollm2-135m	6	dot4	1	82.65	56277184579	acd327c250a0
+smollm2-135m	6	new	1	116.29	66512025784	acd327c250a0
+smollm2-135m	7	new	1	124.16	66510749486	acd327c250a0
+smollm2-135m	7	dot4	1	82.90	56264451118	acd327c250a0
+smollm2-135m	7	new	16	52.26	74574965787	acd327c250a0
+smollm2-135m	7	dot4	16	53.97	63180658665	acd327c250a0
+# preflight smollm2-360m 14:09:12
+# busy   loadavg              2.70
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 0%
+# preflight: busy (loadavg,other_processes): timings from this machine now are not results
+smollm2-360m	1	new	16	99.13	190314744951	64a90dcfeca9
+smollm2-360m	1	dot4	16	101.45	165471632239	64a90dcfeca9
+smollm2-360m	1	dot4	1	203.19	146757070100	64a90dcfeca9
+smollm2-360m	1	new	1	275.58	174672738132	64a90dcfeca9
+smollm2-360m	2	dot4	16	101.32	164969940152	64a90dcfeca9
+smollm2-360m	2	new	16	103.39	191797276033	64a90dcfeca9
+smollm2-360m	2	new	1	281.42	174672747504	64a90dcfeca9
+smollm2-360m	2	dot4	1	200.29	146757066652	64a90dcfeca9
+smollm2-360m	3	dot4	1	199.87	146757067270	64a90dcfeca9
+smollm2-360m	3	dot4	16	101.97	165388542197	64a90dcfeca9
+smollm2-360m	3	new	16	101.68	191779797940	64a90dcfeca9
+smollm2-360m	3	new	1	274.87	174681290159	64a90dcfeca9
+smollm2-360m	4	new	16	101.45	191879869751	64a90dcfeca9
+smollm2-360m	4	dot4	1	199.74	146757050899	64a90dcfeca9
+smollm2-360m	4	new	1	275.81	174681320142	64a90dcfeca9
+smollm2-360m	4	dot4	16	101.19	165007902682	64a90dcfeca9
+smollm2-360m	5	new	1	279.23	174672721503	64a90dcfeca9
+smollm2-360m	5	dot4	16	101.42	162803240862	64a90dcfeca9
+smollm2-360m	5	dot4	1	202.00	146757043030	64a90dcfeca9
+smollm2-360m	5	new	16	100.58	192287391151	64a90dcfeca9
+smollm2-360m	6	new	16	100.10	191582931952	64a90dcfeca9
+smollm2-360m	6	dot4	16	103.52	164433232663	64a90dcfeca9
+smollm2-360m	6	dot4	1	202.68	146757040249	64a90dcfeca9
+smollm2-360m	6	new	1	275.77	174682183599	64a90dcfeca9
+smollm2-360m	7	dot4	16	100.23	165613983838	64a90dcfeca9
+smollm2-360m	7	new	16	101.58	190103064395	64a90dcfeca9
+smollm2-360m	7	new	1	278.19	174683193705	64a90dcfeca9
+smollm2-360m	7	dot4	1	202.87	146758381571	64a90dcfeca9
+# preflight smollm2-360m 14:13:37
+# ok     loadavg              1.14
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 0%
+# preflight: busy (other_processes): timings from this machine now are not results
+smollm2-360m	1	new2	16	101.32	192514029368	64a90dcfeca9
+smollm2-360m	1	dot4b	1	192.68	146768324835	64a90dcfeca9
+smollm2-360m	1	dot4b	16	102.65	164287220260	64a90dcfeca9
+smollm2-360m	1	new2	1	267.19	174683221403	64a90dcfeca9
+smollm2-360m	2	new2	1	273.81	174681703650	64a90dcfeca9
+smollm2-360m	2	dot4b	16	103.58	164376260016	64a90dcfeca9
+smollm2-360m	2	dot4b	1	199.39	146771234491	64a90dcfeca9
+smollm2-360m	2	new2	16	101.55	191654089353	64a90dcfeca9
+smollm2-360m	3	dot4b	1	207.42	146767318791	64a90dcfeca9
+smollm2-360m	3	new2	16	103.45	191961205355	64a90dcfeca9
+smollm2-360m	3	dot4b	16	106.16	165592499231	64a90dcfeca9
+smollm2-360m	3	new2	1	272.55	174672705534	64a90dcfeca9
+# preflight smollm2-135m 14:15:43
+# ok     loadavg              1.17
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 0%
+# preflight: busy (other_processes): timings from this machine now are not results
+smollm2-135m	1	new2	1	116.39	66502512013	acd327c250a0
+smollm2-135m	1	dot4b	1	80.26	56276321002	acd327c250a0
+smollm2-135m	1	dot4b	16	53.97	64550771273	acd327c250a0
+smollm2-135m	1	new2	16	52.94	74473418961	acd327c250a0
+smollm2-135m	2	new2	16	52.77	74631911390	acd327c250a0
+smollm2-135m	2	dot4b	16	54.87	65397545236	acd327c250a0
+smollm2-135m	2	dot4b	1	80.81	56264448774	acd327c250a0
+smollm2-135m	2	new2	1	115.52	66510898144	acd327c250a0
+smollm2-135m	3	new2	16	53.42	75232844123	acd327c250a0
+smollm2-135m	3	new2	1	123.10	66502507094	acd327c250a0
+smollm2-135m	3	dot4b	16	55.10	65698014562	acd327c250a0
+smollm2-135m	3	dot4b	1	82.65	56264452258	acd327c250a0
