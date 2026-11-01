@@ -101,6 +101,11 @@ between sessions). Loading the 1.7B takes 5 s (66 s
 before the loader moved to `bend-ml-binary-read`). The machine, the versions and every number are in
 [`BENCHMARK.md`](BENCHMARK.md).
 
+Those numbers are v1.4.1's code. v1.5.0 moves to `bend-ml-tensor-array@0.1.19.0`, whose dot product is unrolled by
+four with the same bits: on one thread a token takes 17 to 30% less (135M 110 → 76 ms, 360M 270 → 195, 1.7B 1172 →
+974), and on 16 threads it is the same within the spread (-2% to +3%). Measured the same day on an idle machine, by the
+program's own clock, llama.bend alone; the method is in [`BENCHMARK.md`](BENCHMARK.md).
+
 Bend 2.0.39 is faster than 2.0.38 on the same commit. On the 135M, idle machine, 5 alternated rounds (2026-10-24), a
 token takes 51.6 ms on 16 threads against 58.7, and 114 ms on one thread against 116, inside the spread. The program
 runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds). Earlier, built with
