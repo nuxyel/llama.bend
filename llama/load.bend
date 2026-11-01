@@ -104,22 +104,24 @@ def get_list(+path: String, +hi: U32, +lo: U32, +n: Nat) -> IO(List<&2, F32>):
     m : TA.Mat<1n, n> <- get_band(path, hi, lo, 1n, 1n, n, 0n)
     return m_list(n, m)
 
-# fills the bands of b (whose shape comes from TA.Bands.zeros) in row order; rr is r at run time
-def load_tree(+c: Nat, -r: Nat, b: TA.Bands<r, c>, +rr: Nat, -e: {rr == r : Nat}, +path: String, +hi: U32, +lo: U32, +start: Nat) -> IO(TA.Bands<r, c>):
-  match b:
-    case TA.BLeaf{m}:
+# fills a tree of 2^d bands (TA.Bands.zeros's shape: each node halves its rows with TA.half) in row order; rr is r at
+# run time. The tree is walked by its depth, not built first with TA.Bands.zeros and matched: that tree's zero-filled
+# arrays were dropped unread (NOTES.md, 2026-11-01)
+def load_tree(+c: Nat, -r: Nat, +d: Nat, +rr: Nat, -e: {rr == r : Nat}, +path: String, +hi: U32, +lo: U32, +start: Nat) -> IO(TA.Bands<r, c>):
+  match d:
+    case 0n:
       do IO<TA.Bands<r, c>>:
         band : TA.Mat<r, c> <- get_band(path, hi, lo, r, rr, c, start)
         return TA.BLeaf{band}
-    case TA.BNode{x, y}:
+    case 1n+q:
       do IO<TA.Bands<r, c>>:
-        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), x, TA.half(rr), TA.eq_half(rr, r, e), path, hi, lo, start)
-        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), y, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, hi, lo, Nat.add(start, Nat.mul(TA.half(rr), c)))
+        x2 : TA.Bands<TA.half(r), c> <- load_tree(c, TA.half(r), q, TA.half(rr), TA.eq_half(rr, r, e), path, hi, lo, start)
+        y2 : TA.Bands<Nat.sub(r, TA.half(r)), c> <- load_tree(c, Nat.sub(r, TA.half(r)), q, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), path, hi, lo, Nat.add(start, Nat.mul(TA.half(rr), c)))
         return TA.BNode{x2, y2}
 
 # tensor t (w/st.txt's order) as bands of depth d; a short read stops the program (read_done)
 def get_bands(+dir: String, +st: List<&2, U32>, +t: Nat, +d: Nat, +r: Nat, +c: Nat) -> IO(TA.Bands<r, c>):
-  load_tree(c, r, TA.Bands.zeros(d, r, c), r, {==}, st_path(dir), st_hi(st, t), st_lo(st, t), 0n)
+  load_tree(c, r, d, r, {==}, st_path(dir), st_hi(st, t), st_lo(st, t), 0n)
 
 def get_norm(+dir: String, +st: List<&2, U32>, +t: Nat, +n: Nat) -> IO(List<&2, F32>):
   get_list(st_path(dir), st_hi(st, t), st_lo(st, t), n)
