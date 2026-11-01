@@ -1049,3 +1049,16 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   directive with its reason (`unused_result` on `forward_pre`/`forward_gen`'s empty or needed outputs and on
   `layer_test`'s `y`, `eager_branch` on `ids_ok`, `repeated_call` on `lcl`), so `make lint` is clean: 0 findings, 13
   suppressed.
+
+## v1.4.2 gates (2026-11-01)
+
+- What v1.4.2 carries over v1.4.1: the merges table parsed once in generation (2026-10-28), bend-lint 0.2.2 with the
+  nine findings suppressed with their reasons (2026-10-30), and a docs pass: `docs/release.md` is now a checklist for
+  every bump and release, without the v1.0 launch leftovers; `docs/plan.md` marks safetensors half done and the
+  compile-time and larger-model risks settled; the README drops the 2.0.36-vs-2.0.37 frame. Nothing under `llama/`
+  changed, so `bend-ml-llama@0.2.0.0` is not republished.
+- docs/release.md's steps on Bend 2.0.39 (a busy machine; no timing taken): `make laws` (`ALL PROOFS CHECK`, both bad
+  programs rejected with their own error), `make check` on the 135M (0 failures; the probe: 0.99 and 6.27 cores),
+  `make bits` and `BENDRTS="--threads 1" make bits` (every output identical), `reference/test_gen.py` on the 360M and
+  the 1.7B (12 prompts each, 0 failures), and the emitted C still has `par_att`'s two joins (now `..._par_att_j76` and
+  `_j79`).
