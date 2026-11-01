@@ -1062,3 +1062,51 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   `make bits` and `BENDRTS="--threads 1" make bits` (every output identical), `reference/test_gen.py` on the 360M and
   the 1.7B (12 prompts each, 0 failures), and the emitted C still has `par_att`'s two joins (now `..._par_att_j76` and
   `_j79`).
+
+## The benchmark on Bend 2.0.39 (2026-11-01)
+
+`BENCHMARK.md` measured again with the protocol of 2026-10-13, on what is published: `998a3e0` (the code under `llama/`
+is v1.4.1's) built once with Bend 2.0.39, tensor-array 0.1.14.0, binary-read 0.2.0.0. The 2.0.36 build is gone from
+the file; one llama.bend build, next to the same baselines at the same versions (transformers 5.19 with PyTorch 2.14.1,
+llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on disk.
+
+- **Method.** My measurement harness (private for now), the same blocks as 2026-10-13: 32 tokens on the 135M and 360M
+  (5 rounds), 128 on the 1.7B (3 rounds), 512 against llama.cpp (2 rounds); every round in a fresh shuffled order; the
+  marginal cost t(n+1 tokens) - t(1 token); one thread pinned with `taskset -c 3`, 16 threads unpinned; peak memory from
+  one more run per case. "Once upon a time", greedy. 06:21 to 08:17, on mains power in `performance`.
+- **Load.** Before each block a preflight (mains, profile, load, CPU 3's sibling idle) and `uptime`, waiting until the
+  one-minute load was under 1.0 with no other process above 10% CPU: load 0.52, 0.98, 0.60, 0.79, 0.62 and 0.85 at the
+  start of the six blocks. Idle agent processes (two `codex`, one `codex-code-mode`, one `claude`, under 3% CPU) were
+  running and flagged by the preflight; nothing else. The load at the end of each block (2.7 to 8.7) is the
+  benchmark's own 16-thread runs.
+- **Raw numbers**, ms per generated token, medians (min-max), llama.bend:
+
+  | block | 1 thread | 16 threads |
+  |---|---|---|
+  | 135M, 32 tokens | 118.3 (117.6-122.9) | 52.9 (52.2-53.9) |
+  | 360M, 32 tokens | 272.0 (268.9-279.7) | 98.3 (96.0-102.8) |
+  | 1.7B, 128 tokens | 1233 (1209-1239) | 297.0 (296.9-298.1) |
+  | 135M, 512 tokens | 128.0 (127.3-128.7) | 72.7 (72.5-72.9) |
+  | 360M, 512 tokens | 301.9 (301.4-302.3) | 117.9 (117.7-118.1) |
+  | 1.7B, 512 tokens | 1239 (1237-1242) | 294.1 (293.6-294.5) |
+
+  Baselines (1 / 16 threads): transformers 27.1 / 21.0, 60.0 / 38.2, 238 / 125; llama.cpp 23.8 / 13.9, 63.3 / 28.2,
+  326 / 101 (512 tokens: 25.4 / 14.3, 64.9 / 28.8, 332 / 104); candle 26.8 / 29.2, 71.5 / 77.3, 298 / 308.
+  transformers on 16 threads spreads widely (135M 14.7-37.8 ms, 360M 20.2-60.3 ms). Every case gave the reference
+  tokens, except llama.cpp on the 360M over 512 tokens, which leaves them after about 340 tokens at the same place as
+  on 2026-10-12 and 10-13.
+- **Against 2026-10-13** (2.0.37, tensor-array 0.1.7.0, the old loader, before `forward_gen`): 16 threads 17-31% faster
+  per token on every model (1.7B over 128 tokens 492 to 297, 426 to 296 by its own clock); one thread within -4% to
+  +6% (1.7B over 512 tokens 1165 to 1239, the largest). Under the 15% I treat as session-to-session spread, so not a
+  regression, and the baselines moved 0-6% between the sessions.
+- **Loading.** 0.5, 1.2 and 5.1 s to load and generate one token on 16 threads (2026-10-16: 1.0, 2.3 and 9.1 s; part
+  of that is tensor-array 0.1.12.0's `cap_depth`). Peak memory 716, 2,255 and 6,819 MB; the 1.7B on one thread peaks
+  at 6,800 MB (8.4 GB with the old loader).
+- **Flat cost.** Growth per cached position over 512 tokens 0.04-0.21 ms, as before (0.04-0.18). For the 1.7B the
+  harness keeps only the last 496 timestamps of the output.
+- `bench/history.md`: `scripts/bench_compare.sh` with 2.0.38 and 2.0.39 at `998a3e0`, after the run (load 0.62 at the
+  start): 122.3 / 60.2 ms on 2.0.39 against 123.7 / 63.9 on 2.0.38, the same direction as 2026-10-24.
+- `docs/media/numbers.json` is exported from this run, and `make media` redrew the README frames; the deck lost the
+  2.0.36-vs-2.0.37 slide, so the flat-cost and start-up frames are now `04-` and `05-`.
+- Not measured: the unmerged BF16 plain-Bend loader (it changes `main.bend`'s loader, which only `layer_test` uses, so
+  a load-time note needs its own program); the 1.7B on the GPU.
