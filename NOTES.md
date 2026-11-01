@@ -1185,3 +1185,74 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
 - `bend-ml-llama` is not republished: the package is `llama/main.bend` and what it imports (tensor-array only), unchanged
   since 0.2.0.0 was published on 2026-10-21. `llama/load.bend` changed, but it is the demos' loader and never imported
   from `main.bend`, so it is not in the package. The same change in `main.bend`'s loader waits for the next release.
+
+## Loading without a zero tree; the unrolled dot product; where a bang's millisecond goes (2026-11-01)
+
+Three measurements on an idle machine (load 0.3-1.2 before each block; idle agent processes, `codex` and `claude`
+under 3% CPU, flagged by the preflight), Bend 2.0.39, 1 thread pinned with `taskset -c 3` and 16 threads with
+`+RTS --threads 16 -RTS`, 7 alternated rounds in a fresh shuffled order, then 3 more rounds from rebuilt binaries in
+the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
+
+- **Loading (kept).** `load_tree`, in `load.bend` and in `main.bend`, built a `TA.Bands.zeros` tree only to match its
+  shape, and dropped its zero-filled arrays unread: a zeroed copy of every weight matrix. It now walks the band
+  depth `d` itself and builds the same tree (bend-ml found the same in its GPT-2 demo the same day). `demo/gen`, one
+  token from "Once upon a time", "weights loaded in" by the program's own clock, in seconds:
+
+  | model | threads | before | after | change | instructions/u before → after | wall, 1 token |
+  |---|---|---|---|---|---|---|
+  | 135M | 1 | 0.275 (0.267-0.286) | 0.204 (0.203-0.208) | -26% | 10.32 → 8.98 G | 0.66 → 0.60 s |
+  | 135M | 16 | 0.335 (0.327-0.348) | 0.257 (0.251-0.264) | -23% | 11.95 → 10.29 G | 0.51 → 0.43 s |
+  | 360M | 1 | 1.036 (1.018-1.086) | 0.778 (0.771-0.798) | -25% | 29.72 → 25.16 G | 2.03 → 1.78 s |
+  | 360M | 16 | 1.088 (1.080-1.115) | 0.844 (0.821-0.847) | -22% | 32.66 → 25.93 G | 1.42 → 1.18 s |
+  | 1.7B | 1 | 3.837 (3.827-3.857) | 3.037 (3.028-3.065) | -21% | 126.2 → 112.2 G | 8.28 → 7.55 s |
+  | 1.7B | 16 | 3.876 (3.823-3.908) | 3.031 (3.002-3.048) | -22% | 131.4 → 113.0 G | 4.89 → 4.03 s |
+
+  The rebuilt, order-swapped check gave the same: 135M 0.268 → 0.203 and 0.330 → 0.257 s, 360M 1.011 → 0.750 and
+  1.063 → 0.833 s. Peak memory does not move (the zero tree was freed before the next tensor). Every run gave the same
+  token and logit bits as before, and `make bits` passes (0 failures). The `load.bend` half shipped in v1.4.2
+  (`543d04c`, the two entries above); the `main.bend` copy is the package's loader of the F32 copies
+  (`demo/layer_test`), not timed here; it changes `bend-ml-llama`'s code, so it ships with the next republish.
+- **The unrolled dot product (pending a tensor-array release).** bend-ml's `dotg` unrolled by four (bend-ml commit
+  `cf00ab1`, after tensor-array 0.1.19.0, not on BendHub yet), measured with a local copy of
+  `bend-ml-tensor-array@0.1.14.0` carrying that one change and this branch's imports pointed at it, outside the
+  repository (nothing committed). ms per generated token, 32 tokens, the program's own clock:
+
+  | model | threads | 0.1.14.0 | with the unrolled `dotg` | change | instructions/u |
+  |---|---|---|---|---|---|
+  | 135M | 1 | 116.4 (112.2-124.2) | 81.4 (79.9-82.9) | -30% | 66.5 → 56.3 G |
+  | 135M | 16 | 52.4 (50.8-54.2) | 54.0 (52.7-54.4) | +3% | 74.6 → 64.5 G |
+  | 360M | 1 | 275.8 (274.9-281.4) | 202.0 (199.7-203.2) | -27% | 174.7 → 146.8 G |
+  | 360M | 16 | 101.5 (99.1-103.4) | 101.4 (100.2-103.5) | 0% | 191.8 → 165.0 G |
+
+  Rebuilt and swapped: 116.4 → 80.8 and 272.6 → 199.4 ms on one thread; 52.9 → 54.9 and 101.6 → 103.6 ms on 16. The
+  ids and the logit bits are the same in every run, and `bits.py check` passes on the experiment's `forward` and `gen`.
+  One thread gains 27-30%, more than bend-ml's own one-thread product (26.7 → 20.0 ms, -25%); 16 threads, bound by
+  memory bandwidth, gain nothing, and the 135M may lose 2-4% there (the rebuilt ranges do not overlap: 52.8-53.4
+  against 54.0-55.1). To take it, llama.bend moves to the tensor-array release that carries the unrolled `dotg`, and
+  this is measured again on that pin, the 16-thread 135M first.
+- **The GPU path's fixed millisecond (measured, no fix).** `nsys` (CUDA trace with unified-memory faults) on
+  `demo/gen_gpu`, 135M, 8 tokens (1,329 bangs over 11 positions, 121 a position), and 360M, 6 tokens (1,158 bangs).
+  Each bang is one round of the runtime's five kernel launches and one `cuCtxSynchronize`: 6,640 launches for 1,329
+  syncs, so the device never needed a second round. Medians over the second half of the run, weights resident, µs:
+
+  | | 135M | 360M |
+  |---|---|---|
+  | `cuLaunchKernel`, each (5 a bang) | 3.9 (mean) | — |
+  | kernel 0 (pass 0, 1 block) | 645 | 657 |
+  | of which under GPU page-fault handling | 588 | — |
+  | kernel 1 (pass 0, 128 blocks) | 282 | 462 |
+  | kernel 2 / kernel 3 / kernel 4 | 1 / 69 / 6 | 1 / 89 / 6 |
+  | first launch to last kernel's end | 1,042 | 1,280 |
+  | host time between two bangs | 572 | 668 |
+
+  The launches take about 20 µs a bang and the sync adds nothing beyond waiting for the kernels: the millisecond is
+  device time. Its fixed part is kernel 0, the one-block pass that starts the bang: about 650 µs on both models and
+  every product size (630-670 for q·k·v, o, gate·up and down on the 135M), 92% of it spent servicing GPU page faults
+  (88 faults a bang on about 11 distinct 4 KB pages, the pages the host wrote since the last bang: the input vector and
+  the heap blocks the host's allocator reused). Kernel 1 is the product itself and grows with the model. Between two
+  bangs the host also takes back about 14 pages a bang (CPU faults). So the fixed cost is managed memory moving the
+  host's writes to the device, in the runtime (`cuMemAllocManaged` with the device as preferred location, no prefetch),
+  not launch overhead or synchronization. Nothing in Bend code reaches it: the products that read one vector are
+  already stacked (four bangs a layer), and the remaining ones depend on each other. A runtime that prefetches the
+  dirty pages, or keeps the frontier's inputs in device memory, is what would remove it; that is an upstream question,
+  not a llama.bend change.
