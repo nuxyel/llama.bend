@@ -1139,3 +1139,28 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
   identical. As expected from both findings: binding `lcl` once measured no change on 2026-10-16, and the table check
   runs once per run (all of `tok` on "hello world", the table check included, is 36 ms of the 0.68 s). The fixes make
   the code cleaner (a tail loop, no suppressions), not faster.
+
+## The GPU path on an idle machine, the 1.7B included (2026-11-01)
+
+- `demo/gen_gpu.bend` at `44b3d20` (bend-ml-tensor-gpu 0.1.2.1, Bend 2.0.39, driver 615.78.08), built once; the 1.7B
+  with `+RTS --gpu 12GB -RTS` (it does not fit in the card's 6 GB), the 135M and 360M with the default span; the
+  default thread count. 3 alternated rounds, each case in a fresh shuffled order; the cost per token as in
+  `BENCHMARK.md`, t(129 tokens) - t(1 token) over 128, and the program's own clock next to it. "Once upon a time",
+  greedy; every run gave the reference tokens (transformers' for the 135M and 360M, the CPU path's 129 for the 1.7B).
+- **Load.** Before each round the preflight and `uptime`, waiting for a one-minute load under 1.0 with no other process
+  above 10% CPU: 0.29, 0.70 and 0.50 at the start of the rounds (1.5 to 1.7 at their end, the runs' own). Idle agent
+  processes (two `codex`, one `codex-code-mode`, one `claude`, under 3% CPU) were running and flagged by the preflight.
+- **Numbers**, ms per generated token, medians (min-max):
+
+  | model | many minus one | program's clock | peak host memory | 16 CPU threads (`BENCHMARK.md`) |
+  |---|---|---|---|---|
+  | 135M | 184.1 (183.5-186.5) | 184.1 (183.8-185.0) | 0.85 GB | 52.9 (32 tokens) |
+  | 360M | 239.8 (224.5-240.8) | 239.3 (239.2-240.2) | 2.4 GB | 98.3 (32 tokens) |
+  | 1.7B | 1565 (1557-1571) | 1556 (1556-1556) | 7.6 GB | 297 (128 tokens) |
+
+  The 360M's low 224.5 is one one-token run that took 5.3 s instead of 3.1; its clock did not move. The 1.7B's
+  oversubscribed 1.58 s a token of 2026-10-18 (one busy run, 4 tokens) holds: 1.56 s, 5.3x the CPU path on 16 threads;
+  the 135M is 3.5x and the 360M 2.4x. Against 2026-10-24's overnight kit (178.9 and 230.6) the 135M and 360M are 3-4%
+  slower, under the spread I accept between sessions. Loading the 1.7B and generating one token takes 12.5 s (6.4 s of
+  it reading the weights).
+- The README's GPU line now carries these numbers.
