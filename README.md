@@ -21,7 +21,7 @@ llama.bend is models and inference: loading the weights, the forward pass, the K
 Training them is out of its scope: that is [BendTorch](https://github.com/nuxyel/bendtorch)'s, which fine-tunes
 SmolLM2-135M and 360M against PyTorch in Bend 2.
 
-<p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.0: 21 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.4: 21 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
 
 ## 01 · A weight in the wrong place is a type error
 
@@ -81,28 +81,26 @@ invalid UTF-8.
 
 ## 04 · How it compares
 
-<p align="center"><img src="docs/media/deck/frames/02-vs-references.webp" alt="SmolLM2-1.7B, ms per token over 128 tokens: llama.cpp 324 and 101, transformers 231 and 133, candle 292 and 295, llama.bend 1203 and 492, on 1 and 16 threads" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/02-vs-references.webp" alt="SmolLM2-1.7B, ms per token over 128 tokens: llama.cpp 326 and 102, transformers 238 and 125, candle 298 and 308, llama.bend 1233 and 297, on 1 and 16 threads" width="90%"></p>
 
 <p align="center"><img src="docs/media/deck/frames/03-three-models.webp" alt="ms per token for the three models on 1 and 16 threads, llama.bend next to transformers, llama.cpp and candle" width="90%"></p>
 
-<p align="center"><img src="docs/media/deck/frames/05-flat-cost.webp" alt="Over 512 tokens a token costs the same: growth per cached position between 0.04 and 0.18 ms" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/04-flat-cost.webp" alt="Over 512 tokens a token costs about the same: growth per cached position between 0.04 and 0.21 ms" width="90%"></p>
 
-<p align="center"><img src="docs/media/deck/frames/06-startup.webp" alt="SmolLM2-1.7B, load and generate one token: llama.bend 66.4 s before and 9.1 s now with bend-ml-binary-read, the others 0.5 to 4.1 s; peak memory 6.8 GB, the lowest" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/05-startup.webp" alt="SmolLM2-1.7B, load and generate one token: llama.bend 5.1 s, the others 0.8 to 3.2 s; peak memory 6.8 GB, the lowest" width="90%"></p>
 
-Every system generates the same tokens. llama.bend is 3.7 to 4.9 times slower than llama.cpp on the 1.7B. Loading was
-its slowest part; since 2026-10-16 it takes 9 s instead of 66. The 1.7B's totals carry the noise of loading it in both runs of a sample: by its own clock,
-llama.bend takes 426 ms per token at 16 threads. The machine, the versions and every number are in
+Every system generates the same tokens. On the 1.7B llama.bend is 3.8 times slower than llama.cpp on one thread and
+2.9 times on 16 (2026-11-01, Bend 2.0.39). Against the run of 2026-10-13 it is 17 to 31% faster per token on 16 threads,
+and about the same on one (2 to 4% faster on the 135M and 360M, 2.5% slower on the 1.7B: gaps within the spread
+between sessions). Loading the 1.7B takes 5 s (66 s
+before the loader moved to `bend-ml-binary-read`). The machine, the versions and every number are in
 [`BENCHMARK.md`](BENCHMARK.md).
-
-<p align="center"><img src="docs/media/deck/frames/04-bend-release.webp" alt="The same commit built with Bend 2.0.36 and 2.0.37: no change beyond the spread" width="90%"></p>
-
-Bend 2.0.37 brings my fix for parallel code with an erased last parameter and a better spread of late forks over
-idle threads. Built with 2.0.36 and with 2.0.37, the same commit runs at the same speed: no def here had the shape that
-the fix is about, and the parallel heads gain nothing more on this machine.
 
 Bend 2.0.39 is faster than 2.0.38 on the same commit. On the 135M, idle machine, 5 alternated rounds (2026-10-24), a
 token takes 51.6 ms on 16 threads against 58.7, and 114 ms on one thread against 116, inside the spread. The program
-runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds).
+runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds). Earlier, built with
+2.0.36 and with 2.0.37 (which carries my fix for parallel code with an erased last parameter), the same commit ran at
+the same speed: no def here had the shape that fix is about.
 
 ## 05 · Reproduce
 
@@ -140,16 +138,17 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 ## 06 · Limits
 
-- **Slower than the references** ([`BENCHMARK.md`](BENCHMARK.md), 2026-10-13). On the 1.7B over 128 tokens at 16
-  threads, llama.bend takes 492 ms per generated token (426 by its own clock), `transformers` 132 and llama.cpp 101; on
-  one thread, 1.2 s against 0.23 and 0.32. The cost of a token does not grow with the position. What remains is the
-  weight products, and still loading: 9.1 s to load the 1.7B and generate one token (66 s before the loader moved to
-  `bend-ml-binary-read`, 2026-10-16), against 4.1 s for `transformers` and 0.5 s for llama.cpp. Peak memory 6.9 GB at 16 threads, 8.4 GB
-  on one.
-- **The GPU path is slower than the CPU** (idle machine, 2026-10-24, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
-  4050 Laptop, the 135M takes 179 ms per token against 60.5 on 16 CPU threads, the 360M 231 against 107: every product is
-  a GPU call with a fixed cost of about 1 ms, and generation has one vector a token to amortize it over. The 1.7B does
-  not fit in the card's 6 GB; with `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.6 s per token (one run, busy machine).
+- **Slower than the references** ([`BENCHMARK.md`](BENCHMARK.md), 2026-11-01, Bend 2.0.39). On the 1.7B over 128
+  tokens at 16 threads, llama.bend takes 297 ms per generated token, `transformers` 125 and llama.cpp 101; on one
+  thread, 1.23 s against 0.24 and 0.33, with no gain since 2026-10-13. The cost of a token barely grows with the
+  position (0.2 ms per cached position at most). What remains is the weight products, and still loading: 5.1 s to load
+  the 1.7B and generate one token, against 3.2 s for `transformers` and 0.8 s for llama.cpp. Peak memory 6.8 GB, on one
+  thread as on 16, the lowest of the four.
+- **The GPU path is slower than the CPU** (idle machine, 2026-11-01, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
+  4050 Laptop, over 128 tokens, the 135M takes 184 ms per token and the 360M 240, against 52.9 and 98.3 on 16 CPU threads
+  ([`BENCHMARK.md`](BENCHMARK.md), 32 tokens): every product is a GPU call with a fixed cost of about 1 ms, and
+  generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
+  `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host memory.
 - Base models, greedy decoding, no chat template. The vectors between layers are lists whose length is not
   in their type, and the numerics are tested, never proved.
 

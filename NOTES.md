@@ -1014,3 +1014,174 @@ now gives these numbers; the 1.7B's oversubscribed 1.6 s a token stays a single 
   rejected for another reason (a failed import, a different mismatch) fails the check too. Tried with the swap
   undone (exit status 0), with gate and down swapped (a different expected shape) and with the marker removed: each
   fails, and the two real programs pass on 2.0.37, 2.0.38 and 2.0.39, under `sh` and under `bash -eo pipefail`.
+
+## bend-lint 0.1.1 (2026-10-28)
+
+- `package.json` asks for bend-lint ^0.1.1 and `bend-lint.json` for `bend-lint-rules@0.1.1.0`, which adds
+  `performance/template_value_field` (a value field of a record of functions that reads a template, rebuilt at every
+  use; found in BendTorch). It is on at upstream's severity, `information`. `make lint`: the same 9 findings and 4
+  suppressed as with 0.1.0 (file, line and rule), none from the new rule, so nothing new to measure.
+- One earlier `make lint` with 0.1.0 on the same tree stopped with "the checker failed: checking demo/gen.bend: Maximum
+  call stack size exceeded" on a busy machine; run again, it passed. Not seen with 0.1.1.
+
+## The merges table parsed once in generation (2026-10-28)
+
+- `demo/gen.bend` and `demo/gen_gpu.bend` parsed `merges_num.txt` (443 KB of digits for SmolLM2) three times: once in
+  `run2` for the malformed-table check, and twice in `generate`, which built the rules once for encoding the prompt and
+  again for decoding the text. Now `run2` parses it once and `generate` builds the rules once and reuses them (`+`).
+- Instructions (`perf stat -e cpu_core/instructions/u`, one thread pinned to a P-core, 135M, "The capital of France
+  is", 1 token): 12,026 million before, 11,952 with the rules built once, 11,831 with the parse shared too, 1.6% fewer
+  in all (195 million, before the first token). Each run repeated, within 0.01%. A generated token costs about 1,850
+  million, so this is a start-up saving only.
+- The same bits: `make check` passes and `make bits` is identical, on 16 threads and on one. `reference/test_gen.py`
+  now also checks that `gen` refuses a malformed merges table (odd count, a forward reference) before reading anything
+  else; the old binary passes it too.
+- Checked at the same time: the greedy `argmax` (`llama/main.bend`) is one pass. `gt_head` compares only the head of
+  the rest of the list with the best so far, so a list of N logits takes N-1 comparisons. Measured on a list of
+  descending F32: 72.6, 73.0 and 73.0 instructions per element at 49,152, 98,304 and 196,608 elements (building the
+  list included), linear; it is under 0.2% of a token.
+
+## bend-lint 0.2.2 (2026-10-30)
+
+- `package.json` asks for bend-lint ^0.2.2 and `bend-lint.json` for `bend-lint-rules@0.2.2.0`: with 0.1.x in
+  `node_modules` the rules no longer built (a type mismatch on the rule API), so `make lint` stopped before any finding.
+- With 0.2.2 it reports the same 9 findings as in the 2026-10-17 pass, none new. Each now carries a `disable-next`
+  directive with its reason (`unused_result` on `forward_pre`/`forward_gen`'s empty or needed outputs and on
+  `layer_test`'s `y`, `eager_branch` on `ids_ok`, `repeated_call` on `lcl`), so `make lint` is clean: 0 findings, 13
+  suppressed.
+
+## v1.4.2 gates (2026-11-01)
+
+- What v1.4.2 carries over v1.4.1: the merges table parsed once in generation (2026-10-28), bend-lint 0.2.2 with the
+  nine findings suppressed with their reasons (2026-10-30), and a docs pass: `docs/release.md` is now a checklist for
+  every bump and release, without the v1.0 launch leftovers; `docs/plan.md` marks safetensors half done and the
+  compile-time and larger-model risks settled; the README drops the 2.0.36-vs-2.0.37 frame. Nothing under `llama/`
+  changed, so `bend-ml-llama@0.2.0.0` is not republished.
+- docs/release.md's steps on Bend 2.0.39 (a busy machine; no timing taken): `make laws` (`ALL PROOFS CHECK`, both bad
+  programs rejected with their own error), `make check` on the 135M (0 failures; the probe: 0.99 and 6.27 cores),
+  `make bits` and `BENDRTS="--threads 1" make bits` (every output identical), `reference/test_gen.py` on the 360M and
+  the 1.7B (12 prompts each, 0 failures), and the emitted C still has `par_att`'s two joins (now `..._par_att_j76` and
+  `_j79`).
+
+## The benchmark on Bend 2.0.39 (2026-11-01)
+
+`BENCHMARK.md` measured again with the protocol of 2026-10-13, on what is published: `998a3e0` (the code under `llama/`
+is v1.4.1's) built once with Bend 2.0.39, tensor-array 0.1.14.0, binary-read 0.2.0.0. The 2.0.36 build is gone from
+the file; one llama.bend build, next to the same baselines at the same versions (transformers 5.19 with PyTorch 2.14.1,
+llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on disk.
+
+- **Method.** My measurement harness (private for now), the same blocks as 2026-10-13: 32 tokens on the 135M and 360M
+  (5 rounds), 128 on the 1.7B (3 rounds), 512 against llama.cpp (2 rounds); every round in a fresh shuffled order; the
+  marginal cost t(n+1 tokens) - t(1 token); one thread pinned with `taskset -c 3`, 16 threads unpinned; peak memory from
+  one more run per case. "Once upon a time", greedy. 06:21 to 08:17, on mains power in `performance`.
+- **Load.** Before each block a preflight (mains, profile, load, CPU 3's sibling idle) and `uptime`, waiting until the
+  one-minute load was under 1.0 with no other process above 10% CPU: load 0.52, 0.98, 0.60, 0.79, 0.62 and 0.85 at the
+  start of the six blocks. Idle agent processes (two `codex`, one `codex-code-mode`, one `claude`, under 3% CPU) were
+  running and flagged by the preflight; nothing else. The load at the end of each block (2.7 to 8.7) is the
+  benchmark's own 16-thread runs.
+- **Raw numbers**, ms per generated token, medians (min-max), llama.bend:
+
+  | block | 1 thread | 16 threads |
+  |---|---|---|
+  | 135M, 32 tokens | 118.3 (117.6-122.9) | 52.9 (52.2-53.9) |
+  | 360M, 32 tokens | 272.0 (268.9-279.7) | 98.3 (96.0-102.8) |
+  | 1.7B, 128 tokens | 1233 (1209-1239) | 297.0 (296.9-298.1) |
+  | 135M, 512 tokens | 128.0 (127.3-128.7) | 72.7 (72.5-72.9) |
+  | 360M, 512 tokens | 301.9 (301.4-302.3) | 117.9 (117.7-118.1) |
+  | 1.7B, 512 tokens | 1239 (1237-1242) | 294.1 (293.6-294.5) |
+
+  Baselines (1 / 16 threads): transformers 27.1 / 21.0, 60.0 / 38.2, 238 / 125; llama.cpp 23.8 / 13.9, 63.3 / 28.2,
+  326 / 101 (512 tokens: 25.4 / 14.3, 64.9 / 28.8, 332 / 104); candle 26.8 / 29.2, 71.5 / 77.3, 298 / 308.
+  transformers on 16 threads spreads widely (135M 14.7-37.8 ms, 360M 20.2-60.3 ms). Every case gave the reference
+  tokens, except llama.cpp on the 360M over 512 tokens, which leaves them after about 340 tokens at the same place as
+  on 2026-10-12 and 10-13.
+- **Against 2026-10-13** (2.0.37, tensor-array 0.1.7.0, the old loader, before `forward_gen`): 16 threads 17-31% faster
+  per token on every model (1.7B over 128 tokens 492 to 297, 426 to 296 by its own clock); one thread within -4% to
+  +6% (1.7B over 512 tokens 1165 to 1239, the largest). Under the 15% I treat as session-to-session spread, so not a
+  regression, and the baselines moved 0-6% between the sessions.
+- **Loading.** 0.5, 1.2 and 5.1 s to load and generate one token on 16 threads (2026-10-16: 1.0, 2.3 and 9.1 s; part
+  of that is tensor-array 0.1.12.0's `cap_depth`). Peak memory 716, 2,255 and 6,819 MB; the 1.7B on one thread peaks
+  at 6,800 MB (8.4 GB with the old loader).
+- **Flat cost.** Growth per cached position over 512 tokens 0.04-0.21 ms, as before (0.04-0.18). For the 1.7B the
+  harness keeps only the last 496 timestamps of the output.
+- `bench/history.md`: `scripts/bench_compare.sh` with 2.0.38 and 2.0.39 at `998a3e0`, after the run (load 0.62 at the
+  start): 122.3 / 60.2 ms on 2.0.39 against 123.7 / 63.9 on 2.0.38, the same direction as 2026-10-24.
+- `docs/media/numbers.json` is exported from this run, and `make media` redrew the README frames; the deck lost the
+  2.0.36-vs-2.0.37 slide, so the flat-cost and start-up frames are now `04-` and `05-`.
+- Not measured: the unmerged BF16 plain-Bend loader (it changes `main.bend`'s loader, which only `layer_test` uses, so
+  a load-time note needs its own program); the 1.7B on the GPU.
+
+## bend-lint's eager_branch and repeated_call fixed (2026-11-01)
+
+- `ids_ok` (`demo/tok.bend`, the merges-table check in `gen` and `gen_gpu`) computed `ids_ok` of the rest even after a
+  bad rule had decided the result, so the walk always reached the end of the table. Now `ids_go` takes the check of the
+  previous rule as a parameter and matches it before going on, the shape bend-lint suggests inside a loop (a helper
+  that branched first would have to call the loop back, and Bend has no mutual recursion). The result is the same; on
+  a malformed table the walk stops at the first bad rule, and it is now a tail loop.
+- `ws3` called `lcl(run, 0n)` twice; it binds it once (`+l`).
+- Both directives are gone: `make lint` gives 0 findings, 11 suppressed (13 before). The same bits: `make bits`
+  identical on 16 threads and on one, `test_tok`/`test_detok` and `test_gen` on the 135M pass, with the malformed
+  tables still refused.
+- **Timing, before (devel at `44b3d20`) against after (this change, rebased on it)**, idle machine, 5 alternated
+  shuffled rounds, one thread pinned with `taskset -c 3`, `perf stat` in user mode, medians (the one-minute load 0.52
+  to 0.89 before each round; idle agent processes under 3% CPU). Three programs where `ids_ok` and `ws3` run: `tok` on
+  "hello world" (start-up and the table check over the 49,152 merges; 20 runs a round), `tok` on 16 KB of
+  `llama/main.bend` (whitespace runs for `ws3`), and `gen` on the 135M with one token (start-up to the first token; 3
+  runs a round).
+
+  | program | before | after | instructions/u before | after |
+  |---|---|---|---|---|
+  | `tok`, "hello world" | 36.3 ms | 36.1 ms | 343.8 M | 345.4 M |
+  | `tok`, 16 KB of code | 13.88 s | 13.97 s | 247.646 G | 247.642 G |
+  | `gen`, 135M, 1 token | 0.682 s | 0.682 s | 10.331 G | 10.329 G |
+
+  No change: every gap is under 1% in time and 0.5% in instructions, with the ranges overlapping, and the outputs are
+  identical. As expected from both findings: binding `lcl` once measured no change on 2026-10-16, and the table check
+  runs once per run (all of `tok` on "hello world", the table check included, is 36 ms of the 0.68 s). The fixes make
+  the code cleaner (a tail loop, no suppressions), not faster.
+
+## The GPU path on an idle machine, the 1.7B included (2026-11-01)
+
+- `demo/gen_gpu.bend` at `44b3d20` (bend-ml-tensor-gpu 0.1.2.1, Bend 2.0.39, driver 615.78.08), built once; the 1.7B
+  with `+RTS --gpu 12GB -RTS` (it does not fit in the card's 6 GB), the 135M and 360M with the default span; the
+  default thread count. 3 alternated rounds, each case in a fresh shuffled order; the cost per token as in
+  `BENCHMARK.md`, t(129 tokens) - t(1 token) over 128, and the program's own clock next to it. "Once upon a time",
+  greedy; every run gave the reference tokens (transformers' for the 135M and 360M, the CPU path's 129 for the 1.7B).
+- **Load.** Before each round the preflight and `uptime`, waiting for a one-minute load under 1.0 with no other process
+  above 10% CPU: 0.29, 0.70 and 0.50 at the start of the rounds (1.5 to 1.7 at their end, the runs' own). Idle agent
+  processes (two `codex`, one `codex-code-mode`, one `claude`, under 3% CPU) were running and flagged by the preflight.
+- **Numbers**, ms per generated token, medians (min-max):
+
+  | model | many minus one | program's clock | peak host memory | 16 CPU threads (`BENCHMARK.md`) |
+  |---|---|---|---|---|
+  | 135M | 184.1 (183.5-186.5) | 184.1 (183.8-185.0) | 0.85 GB | 52.9 (32 tokens) |
+  | 360M | 239.8 (224.5-240.8) | 239.3 (239.2-240.2) | 2.4 GB | 98.3 (32 tokens) |
+  | 1.7B | 1565 (1557-1571) | 1556 (1556-1556) | 7.6 GB | 297 (128 tokens) |
+
+  The 360M's low 224.5 is one one-token run that took 5.3 s instead of 3.1; its clock did not move. The 1.7B's
+  oversubscribed 1.58 s a token of 2026-10-18 (one busy run, 4 tokens) holds: 1.56 s, 5.3x the CPU path on 16 threads;
+  the 135M is 3.5x and the 360M 2.4x. Against 2026-10-24's overnight kit (178.9 and 230.6) the 135M and 360M are 3-4%
+  slower, under the spread I accept between sessions. Loading the 1.7B and generating one token takes 12.5 s (6.4 s of
+  it reading the weights).
+- The README's GPU line now carries these numbers.
+
+## The demos' loader walks the band depth (2026-11-01)
+
+- `llama/load.bend`'s `load_tree` built a `TA.Bands.zeros` tree only to read its shape, a zeroed copy of every weight
+  thrown away unread (bend-ml found the same in its GPT-2 demo). It now walks the depth directly. Measured on an idle
+  machine, 7 shuffled rounds plus 3 rebuilt and swapped, the time to "weights loaded in": 135M 0.275 → 0.204 s, 360M
+  1.036 → 0.778 s, 1.7B 3.84 → 3.04 s on one thread (-21% to -26%), -22% to -23% on 16. Ids and logit bits unchanged,
+  `make bits` and `make check` pass. The package's own loader in `llama/main.bend` has the same tree; changing it means
+  republishing `bend-ml-llama`, so it waits for the release after v1.4.2.
+
+## v1.4.2 release (2026-11-01)
+
+- The gates of the morning ran on the code before `543d04c` (the demos' loader), which `gen` and `forward` use, so the
+  checklist ran again on `8a01091`, Bend 2.0.39, a busy machine (no timing taken): `make laws` (`ALL PROOFS CHECK` from
+  bend and from `--verdict`, both bad programs rejected with their own error), `make check` and `make bits` on the 135M
+  (0 failures, every output identical), `BENDRTS="--threads 1" make bits` (identical), `reference/test_gen.py` on the
+  360M and on the 1.7B, run alone (12 prompts and the two malformed tables each, 0 failures), and the emitted C still
+  has `par_att`'s two joins (`..._par_att_j76` and `_j79`).
+- `bend-ml-llama` is not republished: the package is `llama/main.bend` and what it imports (tensor-array only), unchanged
+  since 0.2.0.0 was published on 2026-10-21. `llama/load.bend` changed, but it is the demos' loader and never imported
+  from `main.bend`, so it is not in the package. The same change in `main.bend`'s loader waits for the next release.

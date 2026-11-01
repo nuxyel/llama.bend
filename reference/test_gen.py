@@ -4,9 +4,9 @@ MODEL (models.py).
   reference/.venv/bin/python reference/test_gen.py <compiled gen>
 
 For every prompt: the prompt ids (Bend's tokenizer), the generated ids and the decoded text must be identical; the
-logit of each chosen id within TOL relative to it.
+logit of each chosen id within TOL relative to it. A malformed merges table must be refused before the weights load.
 """
-import json, os, re, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys, tempfile, time
 
 from models import ROOT, D, T_DIR
 
@@ -40,6 +40,15 @@ def main():
             print(f"  bend:  {p_ids} {gen}\n  torch: {c['ids']} {c['gen']}\n  bend text:  {text!r}\n  torch text: {c['text']!r}")
             if r.returncode != 0:
                 print(r.stderr.decode("utf-8", "replace")[-2000:])
+    # a malformed merges table is refused before anything else is read: the folder holds no weights and no cfg.txt
+    with tempfile.TemporaryDirectory() as d:
+        shutil.copy(os.path.join(D, "perm.txt"), d)
+        for name, merges in [("odd count", "104 101 256"), ("forward reference", "104 101 300 108")]:
+            open(os.path.join(d, "merges_num.txt"), "w").write(merges)
+            r = subprocess.run([EXE, d, "hello world", "1"], capture_output=True, text=True, cwd=ROOT)
+            ok = r.stdout.strip() == "invalid merges table"
+            failures += not ok
+            print(f"{'ok  ' if ok else 'ERROR'} malformed merges refused: {name}" + ("" if ok else f" (got {r.stdout.strip()!r})"))
     print("FAILURES:", failures)
     sys.exit(1 if failures else 0)
 

@@ -105,7 +105,11 @@ API; phase C publishes it.
     backward pass checked against `torch.autograd` (RMSNorm, SwiGLU, softmax).
 
 Optional, after 8: read `model.safetensors` directly in Bend (bf16 → F32 is a shift by 16), so running needs no
-Python; decided after measuring, since `File.read_at` is the cost of loading (bend-ml exp. 13).
+Python; decided after measuring, since `File.read_at` is the cost of loading (bend-ml exp. 13). **Half done
+2026-10-25**: the demos' loader (`llama/load.bend`) and the GPU path read every tensor from `hf/model.safetensors`,
+BF16 at the offsets in `w/st.txt`, with `bend-ml-binary-read` (NOTES). Left: the plain-Bend loader in
+`llama/main.bend` (what `layer_test` uses) still reads the F32 copies, so `make prep` still writes
+them; and `prep.py` still writes `cfg.txt`, the tokenizer tables and `w/st.txt`, so running still needs Python once.
 
 ## Risks and open questions
 
@@ -113,6 +117,8 @@ Python; decided after measuring, since `File.read_at` is the cost of loading (be
   is id 252 + k; the Bend tokenizer must drop the 21 bytes before the merges, as `tokenizers` does (NOTES).
 - ~~RoPE float drift over 30 layers~~: `inv_freq` is bit for bit equal to PyTorch's (milestone 3), and the error
   does not grow over the 30 layers (milestone 4, NOTES).
-- 30 layers: compile time (a data point for the launch question about deeper nets).
+- ~~30 layers: compile time~~: the number of layers is read from `cfg.txt` when the program runs, so one compiled
+  `gen` runs the 135M (30 layers), the 360M (32) and the 1.7B (24); depth does not change what is compiled.
 - The chat template (`<|im_start|>` …) is out of scope; the base model is enough.
-- Larger Llama models later (SmolLM2-360M): only the config should change if the package stays generic.
+- ~~Larger Llama models~~: milestone 8 (2026-10-10) runs SmolLM2-360M and SmolLM2-1.7B with the same code and their
+  own configs, against `transformers` (NOTES).

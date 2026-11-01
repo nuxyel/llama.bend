@@ -329,7 +329,7 @@ function shot5(t) {
 const BZ = { x: 4800, y: 3900 }, base = BZ.y + 190, plotH = 380;
 const PT = N.per_token["smollm2-1.7b"];
 const SYS = [["llama.cpp", "F32", "llama.cpp", "other"], ["transformers", "PyTorch", "transformers", "other"],
-  ["candle", "F32", "candle", "other"], ["llama.bend", "Bend 2.0.37", "llama.bend (Bend 2.0.37)", "bend"]];
+  ["candle", "F32", "candle", "other"], ["llama.bend", `Bend ${N.bend}`, `llama.bend (Bend ${N.bend})`, "bend"]];
 const ms = (v) => `${Math.round(v)} ms`;
 const charts = [
   { x0: BZ.x - 820, w: 700, max: Math.max(...SYS.map((s) => PT["1"][s[2]])) * 1.05, title: "1.7B · ms per token · 1 thread", th: "1" },
@@ -354,9 +354,9 @@ charts.forEach((ch, k) => {
   });
 });
 for (let i = ci; i < 26; i++) key(i, 44.0, 0.5, { w: 0, h: 0, o: 0 }, "smooth");
-const r16 = PT["16"]["llama.bend (Bend 2.0.37)"] / PT["16"]["llama.cpp"], r1 = PT["1"]["llama.bend (Bend 2.0.37)"] / PT["1"]["llama.cpp"];
+const r16 = PT["16"][`llama.bend (Bend ${N.bend})`] / PT["16"]["llama.cpp"], r1 = PT["1"][`llama.bend (Bend ${N.bend})`] / PT["1"]["llama.cpp"];
 const bNote = kinetic(BZ.x, BZ.y + 310, [[`llama.cpp is still ${r1.toFixed(1)}× faster on one thread, ${r16.toFixed(1)}× on 16.`, P.ora]], 36);
-const own16 = Math.round(N.own_clock["smollm2-1.7b"]["16"]["llama.bend (Bend 2.0.37)"]);
+const own16 = Math.round(N.own_clock["smollm2-1.7b"]["16"][`llama.bend (Bend ${N.bend})`]);
 const bWhy = text(BZ.x, BZ.y + 370, `Bend 2 emits scalar code: no BLAS, no SIMD. By its own clock, llama.bend takes ${own16} ms on 16 threads.`, 24, P.b00, "c");
 function shot6(t) {
   for (const [d, a] of benchText) show(d, seg(t, a, a + 0.4), 10);

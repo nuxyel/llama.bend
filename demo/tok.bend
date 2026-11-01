@@ -97,16 +97,26 @@ def rules.go(ns: List<&2, Nat>, +k: Nat) -> List<&2, BPE.Rule>:
 # by construction; what a malformed file can still break is the shape of the table.
 # It must have an even number of ids, and rule k may only refer to ids that exist
 # before it (bytes < 256, or merges 256..256+k-1). The check is linear in the table size.
-def ids_ok(ns: List<&2, Nat>, +k: Nat) -> Bool:
+# ok: whether every rule before k was well formed. The check of rule k is passed to the next call, which matches it
+# before going on, so the walk stops at the first bad rule (a helper that branched first would have to call ids_go
+# back, and Bend has no mutual recursion).
+def ids_go(ns: List<&2, Nat>, +k: Nat, ok: Bool) -> Bool:
   match ns:
     case Nil{}:
-      True{}
+      ok
     case Con{+a, t}:
       match t:
         case Nil{}:
           False{}
         case Con{+b, u}:
-          Bool.and(Bool.and(Nat.is_lt(a, Nat.add(256n, k)), Nat.is_lt(b, Nat.add(256n, k))), ids_ok(u, 1n+k))
+          match ok:
+            case False{}:
+              False{}
+            case True{}:
+              ids_go(u, 1n+k, Bool.and(Nat.is_lt(a, Nat.add(256n, k)), Nat.is_lt(b, Nat.add(256n, k))))
+
+def ids_ok(ns: List<&2, Nat>, +k: Nat) -> Bool:
+  ids_go(ns, k, True{})
 
 def toks_of_ids(ns: List<&2, Nat>) -> List<&2, BPE.Tk>:
   match ns:
@@ -323,7 +333,8 @@ def ws3(+run: List<&2, U32>, +rest: List<&2, U32>, ends: Bool, +n: Nat) -> List<
     case True{}:
       (run, rest)
     case False{}:
-      ws4(Nat.is_lt(lcl(run, 0n), n), run, rest, n, lcl(run, 0n))
+      +l = lcl(run, 0n)
+      ws4(Nat.is_lt(l, n), run, rest, n, l)
 
 # a run that ends the text, or ends right before a digit, is taken whole: SmolLM2 splits every digit off
 # first, so the regex sees the run at the end of its segment and \s+(?!\S) matches all of it
