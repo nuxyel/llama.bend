@@ -14,7 +14,7 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
   `forward`, the loader and every law; `llama/README.md` explains the laws. `make laws` runs bend and `--verdict`.
 - `llama/load.bend`: the loader the demos use, the same model read from `hf/model.safetensors` (BF16, at `w/st.txt`'s
   offsets) with `bend-ml-binary-read` (foreign code, C and JS). Never import it, or binary-read, from `main.bend`: `--verdict` would fail (`make laws` checks it).
-- `llama/gpu.bend`: generation with the products on the GPU through bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.2.1` from BendHub; it
+- `llama/gpu.bend`: generation with the products on the GPU through bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.5.1` from BendHub; it
   uses Base's unsafe `Array.fork`). `demo/gen_gpu.bend` runs it, `make
   bench-gpu` checks its tokens. Never import it, or tensor-gpu, from `main.bend` or `load.bend` (`make laws` checks it).
 - `demo/`: programs on the package (`forward.bend`, `gen.bend`, `layer_test.bend`, which take the model
@@ -24,7 +24,7 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
   (`test_*.py`) and `bits.py` (exact outputs, to show a refactor changes no bit: `make bits`).
 - `data/<MODEL>/` (not committed): what `make prep MODEL=...` downloads and writes (default `smollm2-135m`).
 - bend-ml (`~/Repos/Bend2/bend2-ml`, https://github.com/nuxyel/bend-ml) is the parent project: its packages are
-  imported from BendHub at pinned versions (`bend-ml-tensor-array@0.1.14.0`, `bend-ml-bpe-tokenizer@0.1.3.0`, `bend-ml-binary-read@0.2.0.0`),
+  imported from BendHub at pinned versions (`bend-ml-tensor-array@0.1.19.0`, `bend-ml-bpe-tokenizer@0.1.3.0`, `bend-ml-binary-read@0.2.0.0`),
   and its GPT-2 demo (`demos/gpt2/`) is the pattern for the loader, the tokenizer and the oracle tests. Its
   `NOTES.md` holds the performance experiments (exp. 1-14) this project builds on.
 - Renan's planning notes are private and live outside this repository; never link them from it.
