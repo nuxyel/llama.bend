@@ -1164,3 +1164,12 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
   slower, under the spread I accept between sessions. Loading the 1.7B and generating one token takes 12.5 s (6.4 s of
   it reading the weights).
 - The README's GPU line now carries these numbers.
+
+## The demos' loader walks the band depth (2026-11-01)
+
+- `llama/load.bend`'s `load_tree` built a `TA.Bands.zeros` tree only to read its shape, a zeroed copy of every weight
+  thrown away unread (bend-ml found the same in its GPT-2 demo). It now walks the depth directly. Measured on an idle
+  machine, 7 shuffled rounds plus 3 rebuilt and swapped, the time to "weights loaded in": 135M 0.275 → 0.204 s, 360M
+  1.036 → 0.778 s, 1.7B 3.84 → 3.04 s on one thread (-21% to -26%), -22% to -23% on 16. Ids and logit bits unchanged,
+  `make bits` and `make check` pass. The package's own loader in `llama/main.bend` has the same tree; changing it means
+  republishing `bend-ml-llama`, so it waits for the release after v1.4.2.
