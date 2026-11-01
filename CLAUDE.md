@@ -124,4 +124,5 @@ The five default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root, alongside `NOTES.md` and `docs/plan.md`. See `docs/agents/domain.md`.
+Single-context. There is no `CONTEXT.md` or `docs/adr/` yet: `NOTES.md` is the decision log and `docs/plan.md` the plan,
+and the two files are created only when a term or a structural decision needs them. See `docs/agents/domain.md`.
