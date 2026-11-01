@@ -4,7 +4,7 @@ SmolLM2-135M, a Llama-architecture language model, running in Bend 2: token for 
 with the shapes in the types and the structural guarantees (grouped-query head mapping, even RoPE head size,
 causal KV cache, weight layout) as laws checked by Bend's kernel. Step 1 of the plans after bend-ml v1.2
 ("llama.bend" from Victor Taelin's wishlist, https://x.com/VictorTaelin/status/2104949395770712276). The
-typed layers will become the BendHub package `bend-ml-llama`. **Private for now.**
+typed layers are the BendHub package `bend-ml-llama`; the repository is public since 2026-10-14.
 
 ## Where things are
 
