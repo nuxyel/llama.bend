@@ -1367,3 +1367,24 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   top-k pass, which grows with `k`, is not measured.
 - `make lint`: 0 findings, 12 suppressed. Of the two new `eager_branch` findings, `bytes_eq` (the chat template's role
   check) now stops at the first difference, and `below` is suppressed: it only appears in the laws' types.
+
+## v1.5.0 release (2026-11-01)
+
+- What it holds: the package loader without the zero tree and the move to `bend-ml-tensor-array@0.1.19.0` and
+  `bend-ml-tensor-gpu@0.1.5.1` (the entries above), the plain-Bend loader reading BF16 from `model.safetensors` with
+  `F32=0` the default, and the chat template and seeded sampling with the law `sample_below`. The three branches were
+  rebased on `devel` in that order (only `NOTES.md` and `load_tree` conflicted: the BF16 loader's `load_tree` now walks
+  the band depth too) and each merged after its gates.
+- A minor by bend-ml's `docs/VERSIONING.md`: sampling, the chat template and the safetensors loader in the package are
+  new capabilities. `bend-ml-llama` goes to 0.2.1.0: new API (`sample` and its helpers, the law), the existing
+  signatures unchanged, but a model directory now needs `w/st.txt` (`prep.py --index` for one prepared before
+  2026-10-25).
+- The checklist on `0ebd135`, Bend 2.0.39, a busy machine for the checks (the timings above were taken idle): `make
+  laws` (`ALL PROOFS CHECK` from bend and from `--verdict`, both bad programs rejected with their own error), `make
+  check` on the 135M (0 failures, `test_chat` 26 of 26 and `test_sample` included, the thread probe on 1 and about 7
+  cores), `make bits` on 16 threads and `BENDRTS="--threads 1" make bits` (every output identical),
+  `reference/test_gen.py` on the 360M and, alone, on the 1.7B (12 prompts and the two malformed tables each, 0
+  failures), `make bench-gpu` and `GPU=off` (transformers' tokens, on the pin move), and the emitted C has `par_att`'s
+  two joins (now `..._par_att_j83` and `_j86`). `make lint`: 0 findings, 12 suppressed.
+- BENCHMARK.md keeps v1.4.1's tables with their baselines and gains a section on 0.1.19.0's per-token change (one
+  thread 17-30% faster, 16 threads the same within -2% to +3%), measured idle; the README's section 04 says the same.
