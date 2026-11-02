@@ -2,7 +2,7 @@
 # as exact F32 bits, one line per intermediate and position: `name t b0 b1 ...`, after a line with RoPE's
 # inv_freq. reference/test_layer.py compares them with transformers.
 #
-#   layer_test <dir> <layer> <input.bin> <T>   (the model in dir: cfg.txt and w/, from reference/prep.py;
+#   layer_test <dir> <layer> <input.bin> <T>   (the model in dir: cfg.txt, w/st.txt and hf/, from reference/prep.py;
 #                                               input: T x hidden little-endian F32, from reference/layer_ref.py)
 
 import Base

@@ -1,0 +1,56 @@
+# model	round	variant	threads	ms_per_token	load_s	md5(ids, logit bits)[:12] (32 tokens, "Once upon a time")
+# old: e4e3b3f (v1.4.2, bend-ml-tensor-array@0.1.14.0); new: 0ebd135 (devel before v1.5.0, bend-ml-tensor-array@0.1.19.0); Bend 2.0.39; 1 thread under taskset -c 3
+# ok     loadavg              0.12
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 0%
+# preflight: busy (other_processes): timings from this machine now are not results
+# round 1 19:41:21 load 0.12
+smollm2-1.7b	1	old	16	281.29	2.753	f902577d9266
+smollm2-1.7b	1	new	16	276.48	2.702	f902577d9266
+smollm2-1.7b	1	old	1	1173.10	2.754	f902577d9266
+smollm2-1.7b	1	new	1	973.90	2.772	f902577d9266
+# round 2 19:43:06 load 1.16
+smollm2-1.7b	2	new	16	283.00	2.806	f902577d9266
+smollm2-1.7b	2	old	16	286.13	2.694	f902577d9266
+smollm2-1.7b	2	old	1	1186.68	2.729	f902577d9266
+smollm2-1.7b	2	new	1	957.23	2.730	f902577d9266
+# round 3 19:44:51 load 1.25
+smollm2-1.7b	3	old	16	286.35	2.703	f902577d9266
+smollm2-1.7b	3	old	1	1169.90	2.730	f902577d9266
+smollm2-1.7b	3	new	1	979.45	2.716	f902577d9266
+smollm2-1.7b	3	new	16	278.68	2.606	f902577d9266
+# round 4 19:46:37 load 1.37
+smollm2-1.7b	4	old	1	1171.74	2.703	f902577d9266
+smollm2-1.7b	4	old	16	286.94	2.683	f902577d9266
+smollm2-1.7b	4	new	1	978.94	2.708	f902577d9266
+smollm2-1.7b	4	new	16	281.90	2.663	f902577d9266
+# round 5 19:49:02 load 1.47
+smollm2-1.7b	5	old	1	1155.68	2.676	f902577d9266
+smollm2-1.7b	5	new	16	284.39	2.663	f902577d9266
+smollm2-1.7b	5	old	16	288.77	2.690	f902577d9266
+smollm2-1.7b	5	new	1	961.06	2.705	f902577d9266
+# round 1 19:51:46 load 1.29
+smollm2-135m	1	new	1	76.48	0.196	acd327c250a0
+smollm2-135m	1	old	16	53.71	0.245	acd327c250a0
+smollm2-135m	1	old	1	115.65	0.201	acd327c250a0
+smollm2-135m	1	new	16	52.03	0.247	acd327c250a0
+# round 2 19:52:27 load 1.36
+smollm2-135m	2	new	1	74.23	0.196	acd327c250a0
+smollm2-135m	2	new	16	53.06	0.270	acd327c250a0
+smollm2-135m	2	old	16	52.65	0.251	acd327c250a0
+smollm2-135m	2	old	1	115.39	0.203	acd327c250a0
+# round 3 19:53:09 load 1.47
+smollm2-135m	3	new	16	51.74	0.264	acd327c250a0
+smollm2-135m	3	new	1	77.19	0.201	acd327c250a0
+smollm2-135m	3	old	1	119.23	0.212	acd327c250a0
+smollm2-135m	3	old	16	52.19	0.265	acd327c250a0
+# end busy   loadavg              2.70
+# end ok     ac                   online
+# end ok     power_profile        performance
+# end busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# end ok     perf_event_paranoid  1
+# end ok     cpu3_sibling         cpu4 0%
+# end preflight: busy (loadavg,other_processes): timings from this machine now are not results

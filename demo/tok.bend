@@ -587,6 +587,96 @@ def decode_bytes(+bs: List<&2, U32>) -> String:
 def decode_text(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, ids: List<&2, Nat>) -> String:
   decode_bytes(u32s(BPE.decode(table, tks_of(perm, ids))))
 
+# ---- SmolLM2-Instruct's chat template ----
+# The template of tokenizer_config.json in HuggingFaceTB/SmolLM2-135M-Instruct, -360M-Instruct and -1.7B-Instruct (the
+# same in the three, revisions in reference/models.py, whose tokenizer.json is the base models' file byte for byte):
+# every message is <|im_start|>role\ncontent<|im_end|>\n, a default system message comes first when the first
+# message is not a system one, and <|im_start|>assistant\n asks for the answer. `tokenizers` matches the special
+# tokens before the pre-tokenizer, so <|im_start|> (id 1) and <|im_end|> (id 2) are ids of their own and the text
+# between them is encoded alone. Known limit: a special token written inside a message is encoded as text, where
+# `tokenizers` would match it.
+
+def bytes_of(cs: List<&2, Char>) -> List<&2, U32>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{Chr{cp}, t}:
+      cp <> bytes_of(t)
+
+# "You are a helpful AI assistant named SmolLM, trained by Hugging Face" (ASCII, one byte per character)
+def default_system() -> List<&2, U32>:
+  bytes_of(String.to_list("You are a helpful AI assistant named SmolLM, trained by Hugging Face"))
+
+# ok: whether the bytes before were equal (the walk stops at the first difference)
+def bytes_eq(xs: List<&2, U32>, ys: List<&2, U32>, ok: Bool) -> Bool:
+  match xs ys ok:
+    case _ _ False{}:
+      False{}
+    case Nil{} Nil{} True{}:
+      True{}
+    case Con{+x, xt} Con{+y, yt} True{}:
+      bytes_eq(xt, yt, U32.is_eq(x, y))
+    case _ _ True{}:
+      False{}
+
+# <|im_start|>role\ncontent<|im_end|>\n
+def chat_turn(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, role: List<&2, U32>, content: List<&2, U32>) -> List<&2, Nat>:
+  1n <> List.append(&2, Nat, encode_text(table, perm, List.append(&2, U32, role, 10 <> content)), 2n <> encode_text(table, perm, 10 <> Nil{}))
+
+def chat_gen(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, gen: Bool) -> List<&2, Nat>:
+  match gen:
+    case True{}:
+      1n <> encode_text(table, perm, bytes_of(String.to_list("assistant\n")))
+    case False{}:
+      Nil{}
+
+# the messages as role, content, role, content, ...; gen: end with <|im_start|>assistant\n
+def chat_turns(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, ms: List<&2, List<&2, U32>>, +gen: Bool) -> List<&2, Nat>:
+  match ms:
+    case Con{role, Con{content, rest}}:
+      List.append(&2, Nat, chat_turn(table, perm, role, content), chat_turns(table, perm, rest, gen))
+    case _:
+      chat_gen(table, perm, gen)
+
+def chat_sys(sys: Bool, +table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, +ms: List<&2, List<&2, U32>>, +gen: Bool) -> List<&2, Nat>:
+  match sys:
+    case True{}:
+      chat_turns(table, perm, ms, gen)
+    case False{}:
+      List.append(&2, Nat, chat_turn(table, perm, bytes_of(String.to_list("system")), default_system()), chat_turns(table, perm, ms, gen))
+
+def first_is_system(ms: List<&2, List<&2, U32>>) -> Bool:
+  match ms:
+    case Nil{}:
+      True{}
+    case Con{+role, t}:
+      bytes_eq(role, bytes_of(String.to_list("system")), True{})
+
+# the ids of a conversation in SmolLM2-Instruct's template (an empty one: no default system message, as in the
+# template, whose loop never runs)
+def chat_ids(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, +ms: List<&2, List<&2, U32>>, +gen: Bool) -> List<&2, Nat>:
+  chat_sys(first_is_system(ms), table, perm, ms, gen)
+
+# a file of messages: role and content, each followed by a 0 byte; z: whether the head of bs is a 0 byte
+def head_zero(bs: List<&2, U32>) -> Bool:
+  match bs:
+    case Nil{}:
+      False{}
+    case Con{+b, t}:
+      U32.is_eq(b, 0)
+
+def split0(bs: List<&2, U32>, z: Bool, cur: List<&2, U32>) -> List<&2, List<&2, U32>>:
+  match bs z:
+    case Nil{} _:
+      Nil{}
+    case Con{b, +t} True{}:
+      List.reverse(&2, U32, cur) <> split0(t, head_zero(t), Nil{})
+    case Con{+b, +t} False{}:
+      split0(t, head_zero(t), b <> cur)
+
+def messages(+bs: List<&2, U32>) -> List<&2, List<&2, U32>>:
+  split0(bs, head_zero(bs), Nil{})
+
 # ---- test CLI: ids of the text in a file ----
 
 def show_nats(xs: List<&2, Nat>) -> String:
@@ -631,14 +721,46 @@ def run_dec(a: String, b: String, c: String) -> IO(Unit):
     ids : List<&2, U32> <- read_bytes(c)
     dec_go(m, pm, ids)
 
+def chat_ok(ok: Bool, +ns: List<&2, Nat>, +pm: List<&2, U32>, ms: List<&2, U32>, +gen: Bool) -> IO(Unit):
+  match ok:
+    case True{}:
+      IO.print(show_nats(chat_ids(rules.go(ns, 0n), nums(pm), messages(ms), gen)))
+    case False{}:
+      IO.print("invalid merges table")
+
+def chat_go(+m: List<&2, U32>, +pm: List<&2, U32>, ms: List<&2, U32>, +gen: Bool) -> IO(Unit):
+  chat_ok(ids_ok(nums(m), 0n), nums(m), pm, ms, gen)
+
+# the ids of the conversation in a file of messages (role and content, each followed by a 0 byte)
+def run_chat(a: String, b: String, c: String, +gen: Bool) -> IO(Unit):
+  do IO<Unit>:
+    m : List<&2, U32> <- read_bytes(a)
+    pm : List<&2, U32> <- read_bytes(b)
+    ms : List<&2, U32> <- read_bytes(c)
+    chat_go(m, pm, ms, gen)
+
+def usage() -> IO(Unit):
+  IO.print("usage: tok.bend merges_num.txt perm.txt text, or tok.bend merges_num.txt perm.txt --decode ids, or tok.bend merges_num.txt perm.txt --chat|--chat-nogen messages")
+
+def run_flag(dec: Bool, chat: Bool, nogen: Bool, a: String, b: String, c: String) -> IO(Unit):
+  match dec chat nogen:
+    case True{} _ _:
+      run_dec(a, b, c)
+    case False{} True{} _:
+      run_chat(a, b, c, True{})
+    case False{} False{} True{}:
+      run_chat(a, b, c, False{})
+    case False{} False{} False{}:
+      usage()
+
 def dispatch(args: List<String>) -> IO(Unit):
   match args:
     case Con{prog, Con{a, Con{b, Con{c, Nil{}}}}}:
       run3(a, b, c)
-    case Con{prog, Con{a, Con{b, Con{d, Con{c, Nil{}}}}}}:
-      run_dec(a, b, c)
+    case Con{prog, Con{a, Con{b, Con{+d, Con{c, Nil{}}}}}}:
+      run_flag(String.eq(d, "--decode"), String.eq(d, "--chat"), String.eq(d, "--chat-nogen"), a, b, c)
     case _:
-      IO.print("usage: tok.bend merges_num.txt perm.txt text, or tok.bend merges_num.txt perm.txt --decode ids")
+      usage()
 
 def main() -> IO(Unit):
   do IO<Unit>:

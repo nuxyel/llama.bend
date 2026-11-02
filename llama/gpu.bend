@@ -20,8 +20,8 @@
 # load.bend (bend-ml-binary-read, foreign code) for the weights. All of the computation is Bend.
 
 import Base
-import bend-ml-tensor-array@0.1.14.0/main.bend as TA
-import bend-ml-tensor-gpu@0.1.2.1/main.bend as TG
+import bend-ml-tensor-array@0.1.19.0/main.bend as TA
+import bend-ml-tensor-gpu@0.1.5.1/main.bend as TG
 import ./main.bend as M
 import ./load.bend as L
 

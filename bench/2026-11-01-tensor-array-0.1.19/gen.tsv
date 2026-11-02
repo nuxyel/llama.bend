@@ -1,0 +1,100 @@
+# model	round	variant	threads	ms_per_token	load_s	md5(ids, logit bits)[:12] (32 tokens, "Once upon a time")
+# old: devel e4e3b3f (bend-ml-tensor-array@0.1.14.0); new: c9856dd (bend-ml-tensor-array@0.1.19.0); Bend 2.0.39; 1 thread under taskset -c 3
+# ok     loadavg              1.54
+# ok     ac                   online
+# ok     power_profile        performance
+# busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# ok     perf_event_paranoid  1
+# ok     cpu3_sibling         cpu4 2%
+# preflight: busy (other_processes): timings from this machine now are not results
+# round 1 18:49:05 load 1.46
+smollm2-135m	1	old	16	54.71	0.247	acd327c250a0
+smollm2-135m	1	new	16	55.19	0.278	acd327c250a0
+# round 2 18:49:19 load 1.43
+smollm2-135m	2	old	16	53.87	0.255	acd327c250a0
+smollm2-135m	2	new	16	53.87	0.268	acd327c250a0
+# round 3 18:49:24 load 1.43
+smollm2-135m	3	new	16	55.06	0.259	acd327c250a0
+smollm2-135m	3	old	16	53.74	0.259	acd327c250a0
+# round 4 18:49:28 load 1.47
+smollm2-135m	4	old	16	53.65	0.255	acd327c250a0
+smollm2-135m	4	new	16	54.45	0.253	acd327c250a0
+# round 5 18:49:42 load 1.36
+smollm2-135m	5	old	16	52.29	0.249	acd327c250a0
+smollm2-135m	5	new	16	53.16	0.245	acd327c250a0
+# round 6 18:49:46 load 1.49
+smollm2-135m	6	new	16	54.42	0.248	acd327c250a0
+smollm2-135m	6	old	16	54.19	0.248	acd327c250a0
+# round 7 18:49:51 load 1.45
+smollm2-135m	7	new	16	55.48	0.249	acd327c250a0
+smollm2-135m	7	old	16	53.23	0.250	acd327c250a0
+# round 1 18:50:15 load 1.31
+smollm2-135m	1	new	1	75.68	0.196	acd327c250a0
+smollm2-135m	1	old	1	100.13	0.200	acd327c250a0
+# round 2 18:50:21 load 1.36
+smollm2-135m	2	new	1	77.52	0.198	acd327c250a0
+smollm2-135m	2	old	1	109.81	0.196	acd327c250a0
+# round 3 18:50:28 load 1.33
+smollm2-135m	3	new	1	75.81	0.196	acd327c250a0
+smollm2-135m	3	old	1	107.81	0.197	acd327c250a0
+# round 4 18:50:35 load 1.28
+smollm2-135m	4	new	1	75.77	0.199	acd327c250a0
+smollm2-135m	4	old	1	109.23	0.205	acd327c250a0
+# round 5 18:50:42 load 1.34
+smollm2-135m	5	old	1	120.03	0.197	acd327c250a0
+smollm2-135m	5	new	1	78.13	0.198	acd327c250a0
+# round 6 18:50:49 load 1.29
+smollm2-135m	6	old	1	114.97	0.196	acd327c250a0
+smollm2-135m	6	new	1	78.29	0.197	acd327c250a0
+# round 7 18:50:56 load 1.26
+smollm2-135m	7	new	1	76.32	0.208	acd327c250a0
+smollm2-135m	7	old	1	115.23	0.196	acd327c250a0
+# round 1 18:51:03 load 1.24
+smollm2-360m	1	new	16	100.81	0.680	64a90dcfeca9
+smollm2-360m	1	old	16	97.90	0.680	64a90dcfeca9
+# round 2 18:51:41 load 1.46
+smollm2-360m	2	new	16	100.42	0.677	64a90dcfeca9
+smollm2-360m	2	old	16	98.23	0.683	64a90dcfeca9
+# round 3 18:51:50 load 1.39
+smollm2-360m	3	old	16	96.71	0.667	64a90dcfeca9
+smollm2-360m	3	new	16	101.55	0.677	64a90dcfeca9
+# round 4 18:51:58 load 1.36
+smollm2-360m	4	old	16	99.74	0.680	64a90dcfeca9
+smollm2-360m	4	new	16	100.35	0.676	64a90dcfeca9
+# round 5 18:52:36 load 1.47
+smollm2-360m	5	new	16	101.77	0.685	64a90dcfeca9
+smollm2-360m	5	old	16	100.48	0.668	64a90dcfeca9
+# round 6 18:53:24 load 1.33
+smollm2-360m	6	new	16	100.35	0.674	64a90dcfeca9
+smollm2-360m	6	old	16	96.19	0.680	64a90dcfeca9
+# round 7 18:53:32 load 1.22
+smollm2-360m	7	old	16	97.35	0.663	64a90dcfeca9
+smollm2-360m	7	new	16	97.81	0.673	64a90dcfeca9
+# round 1 18:54:10 load 1.45
+smollm2-360m	1	new	1	192.71	0.612	64a90dcfeca9
+smollm2-360m	1	old	1	271.81	0.615	64a90dcfeca9
+# round 2 18:54:28 load 1.35
+smollm2-360m	2	old	1	271.65	0.614	64a90dcfeca9
+smollm2-360m	2	new	1	191.48	0.614	64a90dcfeca9
+# round 3 18:54:45 load 1.25
+smollm2-360m	3	old	1	266.68	0.612	64a90dcfeca9
+smollm2-360m	3	new	1	193.13	0.613	64a90dcfeca9
+# round 4 18:55:02 load 1.19
+smollm2-360m	4	old	1	269.94	0.615	64a90dcfeca9
+smollm2-360m	4	new	1	195.81	0.613	64a90dcfeca9
+# round 5 18:55:20 load 1.14
+smollm2-360m	5	old	1	269.52	0.616	64a90dcfeca9
+smollm2-360m	5	new	1	195.55	0.615	64a90dcfeca9
+# round 6 18:55:37 load 1.11
+smollm2-360m	6	new	1	195.74	0.621	64a90dcfeca9
+smollm2-360m	6	old	1	273.58	0.615	64a90dcfeca9
+# round 7 18:55:55 load 1.08
+smollm2-360m	7	old	1	265.81	0.617	64a90dcfeca9
+smollm2-360m	7	new	1	194.55	0.617	64a90dcfeca9
+# end ok     loadavg              1.06
+# end ok     ac                   online
+# end ok     power_profile        performance
+# end busy   other_processes      codex-code-mode x1, codex x2, claude x1
+# end ok     perf_event_paranoid  1
+# end ok     cpu3_sibling         cpu4 1%
+# end preflight: busy (other_processes): timings from this machine now are not results

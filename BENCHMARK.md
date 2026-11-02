@@ -92,6 +92,26 @@ llama.bend loads the weight matrices from `model.safetensors` with `bend-ml-bina
 It is still the slowest to start on the 1.7B, and it has the lowest peak memory on the 1.7B, also on one thread (6,800
 MB; 8.4 GB on 2026-10-13 with the old loader). The peak over 512 tokens is 7.1 GB.
 
+## On bend-ml-tensor-array 0.1.19.0 (v1.5.0, 2026-11-01)
+
+The tables above are v1.4.1's code on tensor-array 0.1.14.0. v1.5.0 moves to 0.1.19.0, whose dot product runs four
+sums unrolled (the same order of additions, so the same bits). I measured that change alone the same day, 18:49 to
+19:54, on the same machine (load under 1.5 before every round, mains power, `performance` profile), with a different
+method from the tables above: llama.bend only, `demo/gen` built from v1.4.2 and from v1.5.0, 32 tokens from "Once upon a
+time", ms per token by the program's own clock (from the first generated token to the last), shuffled alternated
+rounds (7 for the 135M and 360M, then 5 for the 1.7B and 3 more for the 135M), medians. Every run gave the same ids and
+logit bits.
+
+| model | 1 thread, v1.4.2 → v1.5.0 | 16 threads, v1.4.2 → v1.5.0 |
+|---|---|---|
+| SmolLM2-135M | 110 → 76.3 (-30%) | 53.7 → 54.5 (+1%) |
+| SmolLM2-360M | 270 → 195 (-28%) | 97.9 → 100 (+3%) |
+| SmolLM2-1.7B | 1172 → 974 (-17%) | 286 → 282 (-2%) |
+
+The later 3 rounds of the 135M gave 116 → 76.5 on one thread and 52.6 → 52.0 on 16. One thread is 17 to 30% faster;
+16 threads, bound by memory bandwidth, are the same within the spread (the 360M's +3% sits inside overlapping ranges).
+Raw rows: [`bench/2026-11-01-tensor-array-0.1.19/`](bench/2026-11-01-tensor-array-0.1.19/).
+
 ## Against the run of 2026-10-13
 
 The run of 2026-10-13 measured `3ea435a` on Bend 2.0.37 with `bend-ml-tensor-array@0.1.7.0` and the old loader, with

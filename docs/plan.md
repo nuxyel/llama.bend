@@ -105,11 +105,11 @@ API; phase C publishes it.
     backward pass checked against `torch.autograd` (RMSNorm, SwiGLU, softmax).
 
 Optional, after 8: read `model.safetensors` directly in Bend (bf16 → F32 is a shift by 16), so running needs no
-Python; decided after measuring, since `File.read_at` is the cost of loading (bend-ml exp. 13). **Half done
-2026-10-25**: the demos' loader (`llama/load.bend`) and the GPU path read every tensor from `hf/model.safetensors`,
-BF16 at the offsets in `w/st.txt`, with `bend-ml-binary-read` (NOTES). Left: the plain-Bend loader in
-`llama/main.bend` (what `layer_test` uses) still reads the F32 copies, so `make prep` still writes
-them; and `prep.py` still writes `cfg.txt`, the tokenizer tables and `w/st.txt`, so running still needs Python once.
+Python; decided after measuring, since `File.read_at` is the cost of loading (bend-ml exp. 13). **Weights done**:
+since 2026-10-25 the demos' loader (`llama/load.bend`) and the GPU path read every tensor from `hf/model.safetensors`,
+BF16 at the offsets in `w/st.txt`, with `bend-ml-binary-read`; since 2026-11-01 the plain-Bend loader in
+`llama/main.bend` does the same with `File.read_at`, and `make prep` no longer writes the F32 copies (NOTES). Left:
+`prep.py` still writes `cfg.txt`, the tokenizer tables and `w/st.txt`, so preparing a model still needs Python once.
 
 ## Risks and open questions
 
@@ -119,6 +119,10 @@ them; and `prep.py` still writes `cfg.txt`, the tokenizer tables and `w/st.txt`,
   does not grow over the 30 layers (milestone 4, NOTES).
 - ~~30 layers: compile time~~: the number of layers is read from `cfg.txt` when the program runs, so one compiled
   `gen` runs the 135M (30 layers), the 360M (32) and the 1.7B (24); depth does not change what is compiled.
-- The chat template (`<|im_start|>` …) is out of scope; the base model is enough.
+- ~~The chat template (`<|im_start|>` …)~~: in since 2026-11-01 (`demo/tok.bend`'s `chat_ids`, `gen --chat`), the same
+  ids as `apply_chat_template`; still open: pinning and preparing the instruct checkpoints, without which a chat runs
+  on a base model (NOTES).
+- ~~Greedy decoding only~~: sampling (temperature, top-k, top-p, a seeded hash generator in Bend) since 2026-11-01,
+  matched draw for draw by a Python twin, with the law `sample_below`; not on the GPU path yet (NOTES).
 - ~~Larger Llama models~~: milestone 8 (2026-10-10) runs SmolLM2-360M and SmolLM2-1.7B with the same code and their
   own configs, against `transformers` (NOTES).

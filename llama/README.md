@@ -35,16 +35,19 @@ def step(+c: M.Cfg, -cap: Nat, +t: Nat, m: M.Model<c>, cs: List<&1, M.KV<cap, t>
 | `causal`, `read_len` | The cache has the type `KV<cap, t>`: the number of positions written is in its type, and a layer at position `t` takes `KV<cap, t>` and returns `KV<cap, t + 1>`. At position `t`, attention scores the query against exactly `t + 1` keys, positions `0..t`: one score per position written. The scores come from `bend-ml-tensor-array`'s `gemm` over the first `t + 1` rows of the keys' array; `read_len` counts the numbers read back from its output. |
 | `kv_room` | The cache is created for `cap` positions: each key/value head gets arrays of `2^d` slots, with `d` chosen by `bend-ml-tensor-array` so that `2^d` is at least `cap·head` (its law `cap_ok`). Writing position `t` fills `head` numbers from `t·head`. The law says that for every position below the capacity (`t < cap`) those numbers fall inside the slots: `(t + 1)·head <= 2^d`. So a push below the capacity never wraps around onto position 0. And a push needs that proof: `KV.push`, `block` and `forward` take a proof that `t < cap` (checked, then erased: it costs nothing when the program runs), so writing at `cap` or beyond does not compile. `step_room` and `step_inv` give the proof to a loop that counts its steps left. |
 | `layout_135m`, `layout_360m`, `layout_1_7b` | The shapes that the types give to the weights (the embedding, every layer's nine tensors and the final norm) add up to 134,515,008 numbers for SmolLM2-135M, 361,821,120 for SmolLM2-360M and 1,711,376,384 for SmolLM2-1.7B, the number of values in each checkpoint. The loader stops on any file whose size differs from the shape in its type, so together the files cover the checkpoint exactly. |
+| `sample_below` | From logits with at least one value, the token `sample` draws is an id of those logits: its index is below their number, whatever the temperature, `k`, `p` and draw. The top-k pass only ever stores the index of the value it is reading, and the walk keeps "index + values left = length", so each stored index is below the length (`topk_below`, through `ins_below` and `take_below`: inserting and cutting the list keep that property). The draw then returns one of the stored candidates (`pick_below`), whatever top-p kept. The proof never looks at an `F32`: every comparison of logits is a `Bool` the lemmas take as given, so it holds for any outcome of them. |
 | `smollm2_135m_sizes`, `smollm2_360m_sizes`, `smollm2_1_7b_sizes` | The configs give the sizes of their `config.json`: SmolLM2-135M has 9 query heads of 64 numbers, a hidden size of 576 and keys 192 wide; SmolLM2-360M has 15 heads of 64, a hidden size of 960 and keys 320 wide; SmolLM2-1.7B has 32 heads of 64, a hidden size of 2048 and keys 2048 wide (one query head per key/value head). |
 
 `add_zero`, `add_succ`, `add_one`, `add_assoc`, `div_block`, `div_blocks`, `div_rest`, `leb_trans` and `leb_mul` are the
-arithmetic lemmas that the proofs above use.
+arithmetic lemmas that the proofs above use; `below`, `and_l`, `and_r`, `ins_below`, `take_below`, `topk_below` and
+`pick_below` are `sample_below`'s.
 
 What is **not** proved: the numbers. `F32` is not a real number. RMSNorm, RoPE, softmax and silu follow the order
 of operations of `transformers`' `modeling_llama.py`, and the tests check the results: logits within 8.3e-5 of
 PyTorch (relative to the largest logit, over 11 prompts and the three models), the same greedy tokens. RMSNorm sums
 its squares as a balanced tree, which keeps it within ~1e-7 of float64 next to the large activations of deep
-layers. The vectors between layers are lists whose length is not in their type.
+layers. The vectors between layers are lists whose length is not in their type. Sampling is tested against a Python
+twin that repeats it operation for operation (llama.bend's `reference/sample_ref.py`): the same ids and logit bits.
 
 ## How a model is described
 
@@ -72,9 +75,12 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `forward_pre(c, cap, t, m, cs, room, tok)` | a prompt position, whose logits nobody reads: the layers and caches as `forward_gen` gives them, without the final norm and the product by the embedding (`lg` and `nf` empty) |
 | `BR.then`, `Out.then` | continue with the fields of a result; a loop over positions recurses inside them |
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
+| `sample(xs, temp, k, p, u) -> Cand` | a token drawn from the logits `xs` (its id `Cand.i` and logit `Cand.v`): the `k` largest logits (ties: the lower id first), weights `exp(v/temp - top/temp)`, top-p `p` over them, and the uniform draw `u` in [0, 1); every step is one F32 operation in a fixed order, so a seed gives the same token wherever the C library's `exp` (which Bend's `F32.exp` calls in double precision) gives the same results; tested with glibc on x86-64 |
+| `uniform(seed, n)`, `hash32` | draw `n` of a seed: the top 24 bits of `hash32(hash32(seed) + n)` (Chris Wellons' lowbias32) times 2^-24; no state between draws |
+| `topk(k, xs)`, `sample.cs`, `Cand` | the two halves of `sample`: the candidates, largest first, and the draw from them |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
-| `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model written by `prep.py` (`<dir>/w/<name>.bin`, little-endian F32, one file per tensor) |
-| `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (BF16 widened exactly to F32, at the offsets `prep.py` writes into `w/st.txt`; the 1.7B in about 8 s instead of 60-70). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean, and `make bits` checks that both loaders give the same outputs |
+| `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model prepared by `prep.py`, in plain Bend: every tensor read from the downloaded `<dir>/hf/model.safetensors` with `File.read_at`, BF16 widened exactly to F32, at the byte offsets `prep.py` writes into `<dir>/w/st.txt` (since 0.2.1.0; 0.2.0.0 read F32 copies, `<dir>/w/<name>.bin`, which `make prep F32=1` still writes) |
+| `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (the same numbers as `main.bend`'s loader, faster: the 1.7B in about 8 s instead of 60-70 with the F32 copies). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean |
 
 An `Array` has a single owner, so every product hands its matrix back (`block` returns its `LW`, `forward` its
 `Model`). `Act` holds every intermediate of a layer (`n1`, `q`, `k`, `v`, `qr`, `kr`, `attn`, `a`, `n2`, `m`,

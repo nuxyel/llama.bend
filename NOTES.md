@@ -1185,3 +1185,206 @@ llama.cpp `23b0202` with F32 GGUFs, candle `c68b249` F32), all installs still on
 - `bend-ml-llama` is not republished: the package is `llama/main.bend` and what it imports (tensor-array only), unchanged
   since 0.2.0.0 was published on 2026-10-21. `llama/load.bend` changed, but it is the demos' loader and never imported
   from `main.bend`, so it is not in the package. The same change in `main.bend`'s loader waits for the next release.
+
+## Loading without a zero tree; the unrolled dot product; where a bang's millisecond goes (2026-11-01)
+
+Three measurements on an idle machine (load 0.3-1.2 before each block; idle agent processes, `codex` and `claude`
+under 3% CPU, flagged by the preflight), Bend 2.0.39, 1 thread pinned with `taskset -c 3` and 16 threads with
+`+RTS --threads 16 -RTS`, 7 alternated rounds in a fresh shuffled order, then 3 more rounds from rebuilt binaries in
+the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
+
+- **Loading (kept).** `load_tree`, in `load.bend` and in `main.bend`, built a `TA.Bands.zeros` tree only to match its
+  shape, and dropped its zero-filled arrays unread: a zeroed copy of every weight matrix. It now walks the band
+  depth `d` itself and builds the same tree (bend-ml found the same in its GPT-2 demo the same day). `demo/gen`, one
+  token from "Once upon a time", "weights loaded in" by the program's own clock, in seconds:
+
+  | model | threads | before | after | change | instructions/u before → after | wall, 1 token |
+  |---|---|---|---|---|---|---|
+  | 135M | 1 | 0.275 (0.267-0.286) | 0.204 (0.203-0.208) | -26% | 10.32 → 8.98 G | 0.66 → 0.60 s |
+  | 135M | 16 | 0.335 (0.327-0.348) | 0.257 (0.251-0.264) | -23% | 11.95 → 10.29 G | 0.51 → 0.43 s |
+  | 360M | 1 | 1.036 (1.018-1.086) | 0.778 (0.771-0.798) | -25% | 29.72 → 25.16 G | 2.03 → 1.78 s |
+  | 360M | 16 | 1.088 (1.080-1.115) | 0.844 (0.821-0.847) | -22% | 32.66 → 25.93 G | 1.42 → 1.18 s |
+  | 1.7B | 1 | 3.837 (3.827-3.857) | 3.037 (3.028-3.065) | -21% | 126.2 → 112.2 G | 8.28 → 7.55 s |
+  | 1.7B | 16 | 3.876 (3.823-3.908) | 3.031 (3.002-3.048) | -22% | 131.4 → 113.0 G | 4.89 → 4.03 s |
+
+  The rebuilt, order-swapped check gave the same: 135M 0.268 → 0.203 and 0.330 → 0.257 s, 360M 1.011 → 0.750 and
+  1.063 → 0.833 s. Peak memory does not move (the zero tree was freed before the next tensor). Every run gave the same
+  token and logit bits as before, and `make bits` passes (0 failures). The `load.bend` half shipped in v1.4.2
+  (`543d04c`, the two entries above); the `main.bend` copy is the package's loader of the F32 copies
+  (`demo/layer_test`), not timed here; it changes `bend-ml-llama`'s code, so it ships with the next republish.
+- **The unrolled dot product (pending a tensor-array release).** bend-ml's `dotg` unrolled by four (bend-ml commit
+  `cf00ab1`, after tensor-array 0.1.19.0, not on BendHub yet), measured with a local copy of
+  `bend-ml-tensor-array@0.1.14.0` carrying that one change and this branch's imports pointed at it, outside the
+  repository (nothing committed). ms per generated token, 32 tokens, the program's own clock:
+
+  | model | threads | 0.1.14.0 | with the unrolled `dotg` | change | instructions/u |
+  |---|---|---|---|---|---|
+  | 135M | 1 | 116.4 (112.2-124.2) | 81.4 (79.9-82.9) | -30% | 66.5 → 56.3 G |
+  | 135M | 16 | 52.4 (50.8-54.2) | 54.0 (52.7-54.4) | +3% | 74.6 → 64.5 G |
+  | 360M | 1 | 275.8 (274.9-281.4) | 202.0 (199.7-203.2) | -27% | 174.7 → 146.8 G |
+  | 360M | 16 | 101.5 (99.1-103.4) | 101.4 (100.2-103.5) | 0% | 191.8 → 165.0 G |
+
+  Rebuilt and swapped: 116.4 → 80.8 and 272.6 → 199.4 ms on one thread; 52.9 → 54.9 and 101.6 → 103.6 ms on 16. The
+  ids and the logit bits are the same in every run, and `bits.py check` passes on the experiment's `forward` and `gen`.
+  One thread gains 27-30%, more than bend-ml's own one-thread product (26.7 → 20.0 ms, -25%); 16 threads, bound by
+  memory bandwidth, gain nothing, and the 135M may lose 2-4% there (the rebuilt ranges do not overlap: 52.8-53.4
+  against 54.0-55.1). To take it, llama.bend moves to the tensor-array release that carries the unrolled `dotg`, and
+  this is measured again on that pin, the 16-thread 135M first.
+- **The GPU path's fixed millisecond (measured, no fix).** `nsys` (CUDA trace with unified-memory faults) on
+  `demo/gen_gpu`, 135M, 8 tokens (1,329 bangs over 11 positions, 121 a position), and 360M, 6 tokens (1,158 bangs).
+  Each bang is one round of the runtime's five kernel launches and one `cuCtxSynchronize`: 6,640 launches for 1,329
+  syncs, so the device never needed a second round. Medians over the second half of the run, weights resident, µs:
+
+  | | 135M | 360M |
+  |---|---|---|
+  | `cuLaunchKernel`, each (5 a bang) | 3.9 (mean) | — |
+  | kernel 0 (pass 0, 1 block) | 645 | 657 |
+  | of which under GPU page-fault handling | 588 | — |
+  | kernel 1 (pass 0, 128 blocks) | 282 | 462 |
+  | kernel 2 / kernel 3 / kernel 4 | 1 / 69 / 6 | 1 / 89 / 6 |
+  | first launch to last kernel's end | 1,042 | 1,280 |
+  | host time between two bangs | 572 | 668 |
+
+  The launches take about 20 µs a bang and the sync adds nothing beyond waiting for the kernels: the millisecond is
+  device time. Its fixed part is kernel 0, the one-block pass that starts the bang: about 650 µs on both models and
+  every product size (630-670 for q·k·v, o, gate·up and down on the 135M), 92% of it spent servicing GPU page faults
+  (88 faults a bang on about 11 distinct 4 KB pages, the pages the host wrote since the last bang: the input vector and
+  the heap blocks the host's allocator reused). Kernel 1 is the product itself and grows with the model. Between two
+  bangs the host also takes back about 14 pages a bang (CPU faults). So the fixed cost is managed memory moving the
+  host's writes to the device, in the runtime (`cuMemAllocManaged` with the device as preferred location, no prefetch),
+  not launch overhead or synchronization. Nothing in Bend code reaches it: the products that read one vector are
+  already stacked (four bangs a layer), and the remaining ones depend on each other. A runtime that prefetches the
+  dirty pages, or keeps the frontier's inputs in device memory, is what would remove it; that is an upstream question,
+  not a llama.bend change.
+
+## bend-ml-tensor-array 0.1.19.0 and bend-ml-tensor-gpu 0.1.5.1 (2026-11-01)
+
+- The package, the demos' loader and the GPU path import `bend-ml-tensor-array@0.1.19.0` (the unrolled `dotg`, `read_l`
+  without the reverse) and `bend-ml-tensor-gpu@0.1.5.1` (0.1.2.1's products on 0.1.19.0). `read_l` now reads from the
+  last index down, so its three callers in `main.bend` (the scores, the weighted sum, the law `read_len`) start at the
+  last index; the list they get is the same, in index order, and `read_len`'s base case no longer needs `rev_len`,
+  which 0.1.19.0 dropped. With the package loader's fix (`load_tree` walking the band depth, above) this changes
+  `bend-ml-llama`'s code.
+- Checks: `make laws` (`ALL PROOFS CHECK` from bend and `--verdict`, both bad programs rejected), `make bits` on 16
+  threads and on one (every output identical: the unrolled `dotg` keeps the order of each sum), `make check` (0
+  failures, the thread probe at 1.00 and 6.95 cores), `make bench-gpu` and `GPU=off scripts/bench.sh` (transformers'
+  tokens).
+- Per token, the measurement the entry above asked for, on the real pin: `demo/gen` built from `e4e3b3f` (0.1.14.0)
+  and from this change, 32 tokens from "Once upon a time", ms by the program's own clock, 7 shuffled alternated rounds
+  per model and thread count, the 16-thread 135M first; load 1.1-1.5 before each round, mains power, `performance`
+  profile, CPU 3's sibling idle, `codex` and `claude` processes present but idle (the preflight flags them). Medians
+  (min-max); raw rows in `bench/2026-11-01-tensor-array-0.1.19/`:
+
+  | model | threads | 0.1.14.0 | 0.1.19.0 | change |
+  |---|---|---|---|---|
+  | 135M | 16 | 53.7 (52.3-54.7) | 54.5 (53.2-55.5) | +1% |
+  | 135M | 1 | 109.8 (100.1-120.0) | 76.3 (75.7-78.3) | -30% |
+  | 360M | 16 | 97.9 (96.2-100.5) | 100.4 (97.8-101.8) | +3% |
+  | 360M | 1 | 269.9 (265.8-273.6) | 194.6 (191.5-195.8) | -28% |
+
+  The same ids and logit bits in every run. One thread gains what the local copy predicted (-27% to -30%); on 16
+  threads, bound by memory bandwidth, the new pin is 1-3% slower, inside overlapping ranges this time, so I read it as
+  no gain and possibly a small loss. I take the pin: one thread is much faster, 16 threads about the same, and the
+  package moves to the tensor-array that bend-ml supports now.
+
+## The plain-Bend loader reads model.safetensors (2026-11-01)
+
+- `llama/main.bend`'s loader (`load_model`, `load_lw`) reads every tensor from `hf/model.safetensors` at `w/st.txt`'s
+  offsets, as `load.bend` and `gpu.bend` have since 2026-10-25, but in plain Bend: `File.read_at` in 1 MB blocks,
+  two bytes per number written straight into the band's array as the F32 whose upper half they are (exact). No
+  foreign code, so `--verdict` still checks the file. `File.read_at` takes a U32 offset, so a tensor must lie in the
+  file's first 4 GiB (the 1.7B's file is 3.4 GB); each tensor's span is checked against the file's size first, and a
+  short or wrong `w/st.txt` stops the program with a message. The API is unchanged; `load_lw` reads `w/st.txt` itself.
+- `make prep` no longer writes the F32 copies (`F32=0` is the default): nothing here reads them. `F32=1` still
+  writes them for `bend-ml-llama@0.2.0.0`, whose loader reads `w/<name>.bin`; `prep --check` verifies them only then.
+- The same numbers: `layer_test` built before and after gives byte-identical output on the three cases of the 135M,
+  the 360M and the 1.7B (16 threads; the 135M also on one), and the same with a model directory holding only
+  `hf/`, `cfg.txt` and `w/st.txt`. `make check` (laws and `--verdict`, the layer test against transformers),
+  `make bits` on 16 threads and on one (identical), `test_gen` on the 360M and the 1.7B (0 failures each), and
+  `par_att`'s two joins still in the C. No timing (busy machine).
+- The package changes (`llama/main.bend`), so the next `bend-ml-llama` is 0.2.1.0: the API is the same, but a
+  model directory needs `w/st.txt` (`prep.py --index` for one prepared before 2026-10-25). Not published yet; the
+  READMEs keep `0.2.0.0` until it is.
+
+## Chat template and sampling (2026-11-01)
+
+### The chat template
+
+- Source: `chat_template` in `tokenizer_config.json` of `HuggingFaceTB/SmolLM2-135M-Instruct` (`12fd25f7`),
+  `-360M-Instruct` (`a10cc151`) and `-1.7B-Instruct` (`31b70e2e`), the same text in the three; I downloaded only that
+  file, `tokenizer.json` and `generation_config.json` (2 MB), no weights. Their `tokenizer.json` is the base models'
+  file byte for byte (sha256 `9ca9acdd...`), so the template runs on the tokenizer already in `data/<MODEL>/hf`.
+  `reference/models.py` pins the three revisions and the template text; `test_chat.py --hub` downloads the 4 KB
+  config again and checks the text (network, so not in `make check`).
+- The template: each message is `<|im_start|>role\ncontent<|im_end|>\n`, a default system message ("You are a
+  helpful AI assistant named SmolLM, trained by Hugging Face") comes first when the first message is not a system one,
+  and `<|im_start|>assistant\n` opens the answer. `tokenizers` matches the special tokens (ids 1 and 2, no lstrip or
+  rstrip) before the pre-tokenizer, so the ids are `1, encode(role + "\n" + content), 2, encode("\n")` per message:
+  `demo/tok.bend`'s `chat_ids` builds exactly that on `encode_text`.
+- `reference/test_chat.py`: 13 conversations (system or not, several turns, an empty message, an empty system message,
+  a system message after the first, a `tool` role, newlines, tabs, accents, CJK, emoji, code), each with and without
+  the generation prompt, against `apply_chat_template(tokenize = True)`: 26 of 26 identical.
+- Two differences, left as they are: `transformers` refuses an empty conversation, where `chat_ids` gives the
+  generation prompt alone; a special token written inside a message is matched by `tokenizers` and encoded as text by
+  Bend (the tokenizer's old limit).
+- `gen --chat "message" n` wraps the prompt as one user turn and stops after `<|im_end|>` (id 2) as well as id 0. The
+  instruct weights are not prepared: that needs a `models.py` entry and `make prep` (the 135M-Instruct is 269 MB), left
+  for later, so a chat runs on a base model for now.
+
+### Sampling
+
+- `llama/main.bend`'s `sample(xs, temp, k, p, u)`, in this order, each step one F32 operation: the `k` largest logits
+  in one pass over the list (a sorted list of at most `k`; a value at or below the smallest kept costs one
+  comparison), ties in id order; weights `exp(v/temp - top/temp)`, `top` the largest; `Z` their sum in order; top-p
+  keeps each candidate whose cumulative weight before it is below `p·Z` (the first always); the draw is the first kept
+  candidate whose cumulative weight is above `u·Zp`, the last kept one if rounding leaves none.
+- Against `transformers`: the same three filters, but top-k runs on the raw logits and the temperature after it
+  (`transformers` divides first; the sets differ only if the division makes a tie at the k-th value), and top-p works
+  on unnormalized weights with the same rule (the smallest prefix whose mass reaches p). Token-level equality with
+  `transformers`' sampler is not possible anyway: its random numbers are PyTorch's.
+- The generator is a hash, Chris Wellons' lowbias32: draw `n` of a seed is the top 24 bits of
+  `hash32(hash32(seed) + n)` times 2^-24, exact in F32, in [0, 1). Nothing is kept between draws, so the n-th
+  generated token always uses draw n.
+- Bit-identical in Python: Bend's `F32.exp` compiles to `(f32)exp(x)`, the C library's double `exp` rounded to F32
+  (read in the emitted C), which `math.exp` (the same libm) and `np.float32` repeat; the C is built with `-std=c11 -O3`
+  and no `-march`, so nothing is fused into an FMA. `reference/sample_ref.py` is the twin.
+- `gen <dir> "prompt" n <temp> <top_k> <top_p> <seed>`: `temp 0` is greedy, `top_k >= 1` and `0 < top_p <= 1` are
+  required. The greedy path is the old `argmax` call, unchanged: `make bits` identical on the 135M, `test_gen` passes
+  on the 135M, 360M and 1.7B.
+- **Law `sample_below`**: with at least one logit, the drawn id is below their number. The proof never looks at an
+  F32: every comparison is a `Bool` the lemmas range over. Two mutations checked that it is not vacuous: an insertion
+  that stores `i + 1`, and a draw that falls back to id 3 on an empty list, are both rejected. `--verdict` passes.
+- `reference/test_sample.py` (in `make check`): `demo/sample_test.bend` draws 180 times from logits made by the hash
+  (16 cases, 1 to 49,152 logits, with and without ties, `k` from 1 to above the vocabulary, `p` from 0.05 to 1, `temp`
+  from 0.01 to 100): every id and logit bit equal to the Python twin's. On the 135M with `GEN_CANDS=1`, 6 runs (5
+  prompts and one chat, 92 draws): every draw equal to the twin's on the candidates Bend printed, and the candidates
+  the top-k of `transformers`' logits for the same tokens within 9.7e-6; the same seed gives the same 16 tokens on one
+  thread and on the default count; temp 0 gives `gen.json`'s greedy tokens; five invalid settings are refused.
+- What the test does not see: it compares choices. A tie-order mutation in the twin fails 7 of the 16 synthetic
+  cases, but replacing the twin's `exp` with NumPy's F32 `exp`, or its `<` with `<=` in the draw, changes no draw here:
+  an ulp in a weight rarely moves a choice.
+- Not done: sampling on the GPU path (`gen_gpu.bend` stays greedy); no timing (the machine was busy), so the cost of the
+  top-k pass, which grows with `k`, is not measured.
+- `make lint`: 0 findings, 12 suppressed. Of the two new `eager_branch` findings, `bytes_eq` (the chat template's role
+  check) now stops at the first difference, and `below` is suppressed: it only appears in the laws' types.
+
+## v1.5.0 release (2026-11-01)
+
+- What it holds: the package loader without the zero tree and the move to `bend-ml-tensor-array@0.1.19.0` and
+  `bend-ml-tensor-gpu@0.1.5.1` (the entries above), the plain-Bend loader reading BF16 from `model.safetensors` with
+  `F32=0` the default, and the chat template and seeded sampling with the law `sample_below`. The three branches were
+  rebased on `devel` in that order (only `NOTES.md` and `load_tree` conflicted: the BF16 loader's `load_tree` now walks
+  the band depth too) and each merged after its gates.
+- A minor by bend-ml's `docs/VERSIONING.md`: sampling, the chat template and the safetensors loader in the package are
+  new capabilities. `bend-ml-llama` goes to 0.2.1.0: new API (`sample` and its helpers, the law), the existing
+  signatures unchanged, but a model directory now needs `w/st.txt` (`prep.py --index` for one prepared before
+  2026-10-25).
+- The checklist on `0ebd135`, Bend 2.0.39, a busy machine for the checks (the timings above were taken idle): `make
+  laws` (`ALL PROOFS CHECK` from bend and from `--verdict`, both bad programs rejected with their own error), `make
+  check` on the 135M (0 failures, `test_chat` 26 of 26 and `test_sample` included, the thread probe on 1 and about 7
+  cores), `make bits` on 16 threads and `BENDRTS="--threads 1" make bits` (every output identical),
+  `reference/test_gen.py` on the 360M and, alone, on the 1.7B (12 prompts and the two malformed tables each, 0
+  failures), `make bench-gpu` and `GPU=off` (transformers' tokens, on the pin move), and the emitted C has `par_att`'s
+  two joins (now `..._par_att_j83` and `_j86`). `make lint`: 0 findings, 12 suppressed.
+- BENCHMARK.md keeps v1.4.1's tables with their baselines and gains a section on 0.1.19.0's per-token change (one
+  thread 17-30% faster, 16 threads the same within -2% to +3%), measured idle; the README's section 04 says the same.
