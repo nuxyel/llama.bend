@@ -1388,3 +1388,8 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   two joins (now `..._par_att_j83` and `_j86`). `make lint`: 0 findings, 12 suppressed.
 - BENCHMARK.md keeps v1.4.1's tables with their baselines and gains a section on 0.1.19.0's per-token change (one
   thread 17-30% faster, 16 threads the same within -2% to +3%), measured idle; the README's section 04 says the same.
+- Published `bend-ml-llama@0.2.1.0`, hash `0x171194e0c744bf1ffdcc47ea33747d37`, from `llama/main.bend` (2 files: it and
+  its `LICENSE`; it imports `bend-ml-tensor-array@0.1.19.0` only). From a scratch folder, `demo/forward.bend` importing
+  the published package and loading with its own plain-Bend loader (no `load.bend`) passes `reference/test_forward.py`
+  on the 135M (0 failures, logits within 1.04e-5 of transformers, the same argmax) and gives output byte for byte
+  identical to the repository's `forward` with `load.bend`. The READMEs import 0.2.1.0.
