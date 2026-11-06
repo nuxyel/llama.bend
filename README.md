@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/nuxyel/llama.bend/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nuxyel/llama.bend/ci.yml?branch=main&style=flat-square&label=ci&labelColor=4d4a44&color=7e9a5e" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-8b83b5?style=flat-square&labelColor=4d4a44" alt="MIT license"></a>
-  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.39-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.39"></a>
+  <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.40-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.40"></a>
   <img src="https://img.shields.io/badge/laws%20proved-21-7e9a5e?style=flat-square&labelColor=4d4a44" alt="21 laws proved">
 </p>
 
@@ -119,7 +119,7 @@ of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.4 GB for the mo
 
 ```bash
 git clone https://github.com/nuxyel/llama.bend.git && cd llama.bend
-make setup   # Bend 2.0.39 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
+make setup   # Bend 2.0.40 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
 make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checked
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
