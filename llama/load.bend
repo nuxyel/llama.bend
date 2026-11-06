@@ -13,7 +13,7 @@
 # and keeps its own loader in plain Bend, which this one must match bit for bit (make bits).
 import Base
 import bend-ml-tensor-array@0.1.19.0/main.bend as TA
-import bend-ml-binary-read@0.2.0.0/main.bend as R
+import bend-ml-binary-read@0.2.0.1/main.bend as R
 import ./main.bend as M
 
 # the numbers a read must have answered, or the program stops
