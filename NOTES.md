@@ -1393,3 +1393,19 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   the published package and loading with its own plain-Bend loader (no `load.bend`) passes `reference/test_forward.py`
   on the 135M (0 failures, logits within 1.04e-5 of transformers, the same argmax) and gives output byte for byte
   identical to the repository's `forward` with `load.bend`. The READMEs import 0.2.1.0.
+
+## Bend 2.0.40 (2026-11-06)
+
+- The pin moves from 2.0.39 to 2.0.40 (`scripts/bump_bend.sh 2.0.40`: the two Linux SHA256 are the release's asset
+  digests). `llama/load.bend` moves to `bend-ml-binary-read@0.2.0.1`: 2.0.40 removed the runtime's internal pread
+  binding that 0.2.0.0's JavaScript lane called (bendlang/bend#2063), and 0.2.0.1 reads through `fs` as Base does.
+  The published `bend-ml-llama` does not import the loader, so it needs no new version.
+- The checklist (`docs/release.md`, section 2) on 2.0.40, a busy machine, so no timing here is a measurement: `make
+  laws` (`ALL PROOFS CHECK` from bend and from `--verdict`), `make check` on the 135M (0 failures), `make bits` on 16
+  threads and on one (every output identical), `reference/test_gen.py` on the 360M and on the 1.7B (12 prompts and
+  the two malformed tables each, 0 failures), `make bench-gpu` and `GPU=off` (transformers' tokens), and the emitted C
+  still has `par_att`'s two joins (now `..._par_att_j0` and `_j3`).
+- The release notes fix none of CLAUDE.md's pitfalls. One regression upstream that touches this project: the BPE
+  tokenizer (bend-ml-bpe-tokenizer 0.1.3.0) runs about 9% more instructions on 2.0.40, the same tokens; bend-ml's
+  NOTES has its cause (bendlang/bend#1978 and #2036). BENCHMARK.md and the README keep their 2.0.39 numbers, dated,
+  until the next run on an idle machine.
