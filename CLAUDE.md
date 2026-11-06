@@ -25,7 +25,7 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
   (`test_*.py`) and `bits.py` (exact outputs, to show a refactor changes no bit: `make bits`).
 - `data/<MODEL>/` (not committed): what `make prep MODEL=...` downloads and writes (default `smollm2-135m`).
 - bend-ml (`~/Repos/Bend2/bend2-ml`, https://github.com/nuxyel/bend-ml) is the parent project: its packages are
-  imported from BendHub at pinned versions (`bend-ml-tensor-array@0.1.19.0`, `bend-ml-bpe-tokenizer@0.1.3.0`, `bend-ml-binary-read@0.2.0.0`),
+  imported from BendHub at pinned versions (`bend-ml-tensor-array@0.1.19.0`, `bend-ml-bpe-tokenizer@0.1.3.0`, `bend-ml-binary-read@0.2.0.1`),
   and its GPT-2 demo (`demos/gpt2/`) is the pattern for the loader, the tokenizer and the oracle tests. Its
   `NOTES.md` holds the performance experiments (exp. 1-14) this project builds on.
 - Renan's planning notes are private and live outside this repository; never link them from it.
@@ -45,7 +45,7 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
 
 ## Rules
 
-1. Bend is pinned to **2.0.39** (and Lean 4.34.0 for `--verdict`). Bend 2 changes fast and differs from
+1. Bend is pinned to **2.0.40** (and Lean 4.34.0 for `--verdict`). Bend 2 changes fast and differs from
    Bend 1: before writing code, read `bend guide`, `bend base <name>` and the Base source
    (`~/.bend/bend2/base.bend`). A version bump goes in `NOTES.md`.
 2. Run the checker on every change; it takes a fraction of a second.
@@ -63,7 +63,7 @@ in type theory: explain each proof in plain language, in a comment and in chat. 
 9. Public text (READMEs, `NOTES.md`, `docs/`) is written in Renan's first person singular: "I measured",
    never "we"/"our". Where a name is needed: "Renan Vinícius (@nuxyel)". This file stays in the third person.
 
-## Bend 2.0.39 pitfalls (paid for in bend-ml)
+## Bend 2.0.40 pitfalls (paid for in bend-ml)
 
 - A compiled program's runtime options go between `+RTS` and `-RTS` (since 2.0.38): `./x +RTS --threads 16 -RTS`, or
   `BENDRTS="--threads 1"` in the environment. A bare `./x --threads 16` passes `--threads 16` to the program and runs on
