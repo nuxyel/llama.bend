@@ -1423,3 +1423,37 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
 - `bend-ml-llama@0.2.1.0` on BendHub still imports tensor-array 0.1.19.0, so `llama/README.md`'s usage block keeps
   0.1.19.0 (a program must import the version the package does, or the `Mat` types differ). bend-ml-llama's next version
   carries 0.1.20.0, and its README moves then.
+
+## Idle round on Bend 2.0.40 (2026-11-07)
+
+An unattended night on the idle machine (started after five quiet minutes: load 0.01, the open agent sessions idle at
+0.9% of a CPU, mains power, `performance` profile), the same kit as 2026-10-24's, at `4ae89bd`.
+
+- **2.0.39 against 2.0.40, the same commit**, the cross-system harness, 5 alternated rounds, 32 tokens of the 135M from
+  "Once upon a time": a token takes 79.5 ms on one thread with 2.0.40 against 80.1 with 2.0.39 (ranges 77.9-80.9 and
+  79.1-81.7) and 53.1 against 51.7 on 16 (52.6-54.1 and 50.5-53.0): the ranges overlap both ways, so no change in a
+  token's cost (2.7% slower on 16 threads, within noise). The run that loads the model and generates one token is
+  faster: 0.42 s against 0.49 on one thread and 0.36 against 0.42 on 16, the ranges apart. The same tokens with both,
+  and the same as transformers', llama.cpp's and candle's. Peak memory 675 / 718 MB (1 / 16 threads), as with 2.0.39.
+- **The baselines the same night**, the same versions as `BENCHMARK.md`: transformers 26.4 / 21.5 ms, llama.cpp 23.8 /
+  13.9, candle 26.6 / 30.5 (1 / 16 threads), within 5% of 2026-11-01. llama.bend is 3.3 times slower than llama.cpp on
+  one thread (5.0 on 2026-11-01, before v1.5.0's unrolled dot product) and 3.8 times on 16 (3.8). One of
+  transformers' 16-thread rounds came out negative (its one-token run slower than its 33-token run).
+- **Hardware counters** (`perf stat`, 33 tokens, 3 alternated rounds, one thread pinned): 2.0.40 runs 6.4% fewer
+  instructions (53.56 G against 57.24 G), 5.7% fewer cycles and 0.9% fewer cache misses. A token's cost does not move,
+  so the gain is in the fixed part of the run, which the one-token times above show; I did not split it further (the
+  load reads the BF16 weights through `bend-ml-binary-read`). The BPE tokenizer's regression on 2.0.40 (about 9% more
+  instructions, bendlang/bend#2081 and #2082) is not separated here: the whole program got faster.
+- **128 tokens by the program's own clock** (the kit's generation segment, 5 rounds), against 2026-10-24 (2.0.39 at
+  `aae14b4`; the code and the compiler both changed since):
+
+  | model | 16 CPU threads, 10-24 → 11-07 | GPU, 10-24 → 11-07 |
+  |---|---|---|
+  | 135M | 60.5 → 60.1 (ranges overlap) | 178.9 → 182.1 (+1.8%, ranges apart) |
+  | 360M | 107.3 → 107.3 (ranges overlap) | 230.6 → 227.8 (-1.2%, ranges apart) |
+
+  The two GPU moves are between sessions, inside what I see from session to session on this machine, and point in
+  opposite directions. Every run gave transformers' tokens.
+- The README carries the 135M comparison, the 2.0.39 A/B and the GPU line; `BENCHMARK.md` has a section for this run,
+  and its 2026-11-01 tables stay as they were. `bench/history.md` gets its 2.0.40 line when `scripts/bench_compare.sh`
+  runs on an idle machine: the night ran the harness, whose clock is a different one.
