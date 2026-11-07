@@ -1457,3 +1457,20 @@ An unattended night on the idle machine (started after five quiet minutes: load 
 - The README carries the 135M comparison, the 2.0.39 A/B and the GPU line; `BENCHMARK.md` has a section for this run,
   and its 2026-11-01 tables stay as they were. `bench/history.md` gets its 2.0.40 line when `scripts/bench_compare.sh`
   runs on an idle machine: the night ran the harness, whose clock is a different one.
+
+## v1.5.2 and bend-ml-llama 0.2.1.1 (2026-11-07)
+
+- Published `bend-ml-llama@0.2.1.1`, hash `0x38fb11cd7a7a90c5e461f41d9ba5721d`, from `llama/main.bend` (3 files: it, its
+  `LICENSE` and its README, which `--publish` sends since Bend 2.0.40). Its only change from 0.2.1.0 is the import,
+  `bend-ml-tensor-array@0.1.20.0` (a law added, every def's code and bits unchanged), so a program that imports
+  tensor-array 0.1.20.0 and the package gets one `Mat`; hence the fourth number. The READMEs import 0.2.1.1, and
+  `llama/README.md`'s usage block moves to 0.1.20.0 with it.
+- From a scratch folder, `demo/forward.bend` importing the published package and loading with its own plain-Bend
+  loader (no `load.bend`) passes `reference/test_forward.py` on the 135M (0 failures, logits within 1.04e-5 of
+  transformers, the same argmax) and gives output byte for byte identical to the repository's `forward` with
+  `load.bend` (7,372,549 bytes on `fwd0`'s ids).
+- The checklist (`docs/release.md`, section 2) on Bend 2.0.40 at `b78ff70`, a busy machine: `make check` with `make
+  laws` first (`ALL PROOFS CHECK`, both bad programs rejected with their own error, every check 0 failures, the thread
+  probe on 1.00 and 7.41 cores); `make bits` on 16 threads and on one (23 outputs identical to the saved bits);
+  `reference/test_gen.py` on the 360M and on the 1.7B (12 prompts and the two malformed tables each, 0 failures); the
+  emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
