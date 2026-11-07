@@ -1409,3 +1409,17 @@ the swapped order. Medians (min-max). Raw rows in `bench/2026-11-01-load-perf/`.
   tokenizer (bend-ml-bpe-tokenizer 0.1.3.0) runs about 9% more instructions on 2.0.40, the same tokens; bend-ml's
   NOTES has its cause (bendlang/bend#1978 and #2036). BENCHMARK.md and the README keep their 2.0.39 numbers, dated,
   until the next run on an idle machine.
+
+## tensor-array 0.1.20.0 and tensor-gpu 0.1.5.2 (2026-11-06)
+
+- `llama/main.bend`, `load.bend` and `gpu.bend` import `bend-ml-tensor-array@0.1.20.0` (bend-ml v1.10.0: the law
+  `matvec_l_len`, only lines added, every def's code and bits unchanged) and `gpu.bend` `bend-ml-tensor-gpu@0.1.5.2`
+  (0.1.5.1's code on 0.1.20.0). No code here changes.
+- The checklist (`docs/release.md`, section 2) on Bend 2.0.40, a busy machine, so no timing here is a measurement: `make
+  check` with `make laws` first (`ALL PROOFS CHECK`, both bad programs rejected), every check 0 failures; `make bits` on 16
+  threads and on one (23 outputs identical to the saved bits); `reference/test_gen.py` on the 360M and on the 1.7B (12
+  prompts and the two malformed tables each, 0 failures); `make bench-gpu` and `GPU=off` (transformers' tokens); the
+  emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
+- `bend-ml-llama@0.2.1.0` on BendHub still imports tensor-array 0.1.19.0, so `llama/README.md`'s usage block keeps
+  0.1.19.0 (a program must import the version the package does, or the `Mat` types differ). bend-ml-llama's next version
+  carries 0.1.20.0, and its README moves then.
