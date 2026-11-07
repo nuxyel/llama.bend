@@ -144,7 +144,7 @@ loader reads.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
-import bend-ml-llama@0.2.1.0/main.bend as M
+import bend-ml-llama@0.2.1.1/main.bend as M
 ```
 
 `make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
