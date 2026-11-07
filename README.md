@@ -106,11 +106,17 @@ four with the same bits: on one thread a token takes 17 to 30% less (135M 110 鈫
 974), and on 16 threads it is the same within the spread (-2% to +3%). Measured the same day on an idle machine, by the
 program's own clock, llama.bend alone; the method is in [`BENCHMARK.md`](BENCHMARK.md).
 
-Bend 2.0.39 is faster than 2.0.38 on the same commit. On the 135M, idle machine, 5 alternated rounds (2026-10-24), a
-token takes 51.6 ms on 16 threads against 58.7, and 114 ms on one thread against 116, inside the spread. The program
-runs 2.5% fewer instructions and 4% fewer cycles over a 33-token run (hardware counters, 3 rounds). Earlier, built with
-2.0.36 and with 2.0.37 (which carries my fix for parallel code with an erased last parameter), the same commit ran at
-the same speed: no def here had the shape that fix is about.
+On 2026-11-07 I measured the 135M again with the same protocol, on the current code (v1.5.1's, on tensor-array
+0.1.20.0) and Bend 2.0.40: a token takes 79.5 ms on one thread and 53.1 on 16, against llama.cpp's 23.8 and 13.9, so
+3.3 and 3.8 times slower (5.0 and 3.8 times on 2026-11-01).
+
+Bend 2.0.40 gives a token the same cost as 2.0.39: the same commit built with 2.0.39 takes 80.1 ms on one thread and
+51.7 on 16 (5 alternated rounds the same night; 2.0.40 is 2.7% slower on 16, every range overlapping). Start-up is
+faster: loading the model and generating one token takes 0.42 s against 0.49 on one thread and 0.36 against 0.42 on
+16, and over a 33-token run the program runs 6.4% fewer instructions and 5.7% fewer cycles (hardware counters, 3
+rounds). Before it, 2.0.39 was faster than 2.0.38 on 16 threads (51.6 against 58.7 ms on the
+135M, 2026-10-24), and 2.0.36 and 2.0.37 (which carries my fix for parallel code with an erased last parameter) ran the
+same commit at the same speed: no def here had the shape that fix is about.
 
 ## 05 路 Reproduce
 
@@ -138,7 +144,7 @@ loader reads.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
-import bend-ml-llama@0.2.1.0/main.bend as M
+import bend-ml-llama@0.2.1.1/main.bend as M
 ```
 
 `make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
@@ -146,7 +152,7 @@ generates 128 tokens on the 135M, fails if they differ from `transformers`' (`be
 (`ms_per_token=... load_s=... tokens=128 ok`). `MODEL=` and `THREADS=` pick the model and the thread count.
 
 `make bench-gpu` runs the same check on `demo/gen_gpu.bend`, whose matrix 路 vector products run on the GPU through
-bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.5.1` on BendHub). It needs CUDA (`CUDA_HOME`); `GPU=off` runs the
+bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.5.2` on BendHub). It needs CUDA (`CUDA_HOME`); `GPU=off` runs the
 same program with its GPU calls on the CPU threads. It gives the same tokens and logit bits, and it is slower (section 06).
 
 `make media` regenerates the figures on this page from real runs (needs node, ffmpeg and Brave). CI runs `make check`
@@ -161,11 +167,12 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   position (0.2 ms per cached position at most). What remains is the weight products, and still loading: 5.1 s to load
   the 1.7B and generate one token, against 3.2 s for `transformers` and 0.8 s for llama.cpp. Peak memory 6.8 GB, on one
   thread as on 16, the lowest of the four.
-- **The GPU path is slower than the CPU** (idle machine, 2026-11-01, Bend 2.0.39, [`NOTES.md`](NOTES.md)). With the products on an RTX
-  4050 Laptop, over 128 tokens, the 135M takes 184 ms per token and the 360M 240, against 52.9 and 98.3 on 16 CPU threads
-  ([`BENCHMARK.md`](BENCHMARK.md), 32 tokens): every product is a GPU call with a fixed cost of about 1 ms, and
+- **The GPU path is slower than the CPU** (idle machine, 2026-11-07, Bend 2.0.40, [`NOTES.md`](NOTES.md)). With the products on an RTX
+  4050 Laptop, over 128 tokens by the program's own clock, the 135M takes 182 ms per token and the 360M 228, against 60.1
+  and 107 on 16 CPU threads over the same 128 tokens: every product is a GPU call with a fixed cost of about 1 ms, and
   generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
-  `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host memory.
+  `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host
+  memory (2026-11-01, Bend 2.0.39).
 - Base models only. The chat template is in (`--chat`), but `reference/models.py` does not pin the instruct checkpoints
   yet, so a chat runs on a base model and answers like one. Sampling matches its Python twin, not `transformers`' own
   sampler (whose random numbers are PyTorch's); it runs on the CPU path only (`gen_gpu.bend` stays greedy), needs a
@@ -190,6 +197,6 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 While building bend-ml I found that a parallel let became sequential when its def's last parameter was erased
 ([bendlang/bend#1374](https://github.com/bendlang/bend/issues/1374)). My fix,
-[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.39.
+[#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.40.
 
 <p align="center"><sub>MIT 路 Renan Vin铆cius (@nuxyel) 路 the visual identity is bend-ml's, in Bend's own colours 路 the launch video (v1.0): <a href="https://github.com/nuxyel/llama.bend/releases/download/v1.0.0/llama.bend.mp4">llama.bend.mp4</a></sub></p>

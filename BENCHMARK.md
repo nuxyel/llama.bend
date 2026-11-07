@@ -112,6 +112,36 @@ The later 3 rounds of the 135M gave 116 → 76.5 on one thread and 52.6 → 52.0
 16 threads, bound by memory bandwidth, are the same within the spread (the 360M's +3% sits inside overlapping ranges).
 Raw rows: [`bench/2026-11-01-tensor-array-0.1.19/`](bench/2026-11-01-tensor-array-0.1.19/).
 
+## SmolLM2-135M on Bend 2.0.40 (2026-11-07)
+
+On 2026-11-07, 06:16 to 06:23, in an unattended run on the same machine (started after five quiet minutes: load 0.01
+at the start of the night, the open agent sessions idle at 0.9% of a CPU, mains power, `performance` profile), with
+the same protocol as the tables above, the 135M only: llama.bend at `4ae89bd` (v1.5.1's code, on
+`bend-ml-tensor-array@0.1.20.0`), built from that commit with Bend 2.0.39 and with 2.0.40, and the same baselines at the
+same versions. 5 alternated rounds, medians, ms per generated token over 32 tokens. Every system produced the same
+tokens.
+
+| system | 1 thread | 16 threads |
+|---|---|---|
+| llama.bend, Bend 2.0.40 | 79.5 | 53.1 |
+| llama.bend, Bend 2.0.39 | 80.1 | 51.7 |
+| transformers 5.19 (PyTorch 2.14.1) | 26.4 | 21.5 |
+| llama.cpp `23b0202` (F32 GGUF) | 23.8 | 13.9 |
+| candle `c68b249` (F32) | 26.6 | 30.5 |
+
+Against the 135M table of 2026-11-01, llama.bend's one thread went from 118 to 79.5 ms (v1.5.0's unrolled dot product,
+measured alone in the section above) and its 16 threads stayed (52.9 to 53.1); the baselines moved by 5% or less. On
+the 135M llama.bend is now 3.3 times slower than llama.cpp on one thread and 3.8 times on 16. transformers on 16
+threads varied as before: in one round its one-token run took longer than its 33-token run, so the difference came out
+negative, and its median carries that.
+
+The two Bend releases give a token the same cost: 2.0.40 is 0.8% faster on one thread and 2.7% slower on 16, every range
+overlapping (one thread 77.9-80.9 against 79.1-81.7 ms; 16 threads 52.6-54.1 against 50.5-53.0). Start-up is faster on
+2.0.40: the run that loads the model and generates one token takes 0.42 s against 0.49 on one thread (0.405-0.434
+against 0.483-0.499) and 0.36 against 0.42 on 16 (0.343-0.367 against 0.407-0.439). Over a 33-token run pinned to one
+thread, `perf stat` counts 6.4% fewer instructions and 5.7% fewer cycles with 2.0.40 (medians of 3 alternated rounds),
+and cache misses within 1%. Peak memory is the same: 675 and 718 MB on 1 and 16 threads (674 and 716 with 2.0.39).
+
 ## Against the run of 2026-10-13
 
 The run of 2026-10-13 measured `3ea435a` on Bend 2.0.37 with `bend-ml-tensor-array@0.1.7.0` and the old loader, with
@@ -136,7 +166,7 @@ moved by 0 to 6% between the two sessions (llama.cpp by 2% or less), which bound
 
 The 2.0.37 against 2.0.36 comparison that this file held until now is in its history and in [`NOTES.md`](NOTES.md)
 (2026-10-13): no change in speed between those two releases. Bend 2.0.38 against 2.0.39 is in
-[`bench/history.md`](bench/history.md).
+[`bench/history.md`](bench/history.md), and 2.0.39 against 2.0.40 in the section on 2.0.40 above.
 
 ## Earlier runs
 
