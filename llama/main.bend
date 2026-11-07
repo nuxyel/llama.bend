@@ -20,7 +20,7 @@
 # few ulps and the argmax exactly (llama.bend's NOTES.md).
 
 import Base
-import bend-ml-tensor-array@0.1.19.0/main.bend as TA
+import bend-ml-tensor-array@0.1.20.0/main.bend as TA
 
 # =====================================================================================================
 # Arithmetic lemmas (used by the laws below)
