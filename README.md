@@ -10,8 +10,8 @@
 </p>
 
 **llama.bend** runs Llama-architecture language models in [Bend 2](https://bend-lang.com): SmolLM2-135M, SmolLM2-360M
-and SmolLM2-1.7B, on the CPU, with the same greedy tokens as PyTorch (`transformers`). One typed package,
-[`llama/`](llama/), runs all three; only the config changes between them. Every weight matrix has its shape in its
+and SmolLM2-1.7B, base and instruct, on the CPU, with the same greedy tokens as PyTorch (`transformers`). One typed
+package, [`llama/`](llama/), runs all three sizes; only the config changes between them. Every weight matrix has its shape in its
 type, computed from that config, so a weight in the wrong place does not compile, and the structural guarantees
 (which key/value head each query head reads, that position t sees exactly positions 0..t, that the cache never writes
 past its room, that the weights cover the checkpoint) are laws that Bend's kernel checks. The package is on BendHub as
@@ -76,6 +76,16 @@ All against `transformers` 5.19 in F32 with eager attention, by the scripts in [
 | argmax at each of the 88 positions | the same | the same | the same |
 | 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
 
+The instruct checkpoints run on the same package and pass the same tests, and answer a chat turn as `transformers`
+does (`generate` over `apply_chat_template`'s ids, stopping after `<|im_end|>`):
+
+| | SmolLM2-135M-Instruct | SmolLM2-360M-Instruct | SmolLM2-1.7B-Instruct |
+|---|---|---|---|
+| logits, worst error relative to the largest logit (11 prompts) | 4.0e-6 | 1.4e-5 | 6.2e-5 |
+| argmax at each of the 88 positions | the same | the same | the same |
+| 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
+| one chat turn: the template's ids, up to 32 greedy tokens and the decoded text (12 messages) | identical | identical | identical |
+
 The tokenizer is written in Bend too (SmolLM2's digit split, the GPT-2 regex and 48,900 merges). It gives the same ids
 as `tokenizers` on 68 fixed texts and 600 random ones, and decodes like it on 1,500 random id sequences, most of them
 invalid UTF-8. SmolLM2-Instruct's chat template, written in Bend on that tokenizer, gives the same ids as `transformers`'
@@ -130,12 +140,14 @@ make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checke
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
 ./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
-./gen data/smollm2-135m --chat "What is the capital of France?" 32   # one user turn in the chat template
+make prep MODEL=smollm2-135m-instruct   # the instruct checkpoint (270 MB)
+./gen data/smollm2-135m-instruct --chat "What is the capital of France?" 32   # one user turn: "The capital of France is Paris."
 ```
 
 Greedy is the default and `temperature 0` is greedy too. A seed gives the same tokens on every run, on one thread as
 on all of them (nothing is kept between draws). `--chat` wraps the prompt in SmolLM2-Instruct's template (default system message, then the user turn, then the
-assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well.
+assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well. It is for the
+instruct checkpoints: a base model only continues the template's text.
 
 The runtime uses every hardware thread unless told otherwise, and that is not always the fastest count. On my
 machine (6 performance cores, 22 threads) the 135M is fastest on 8 threads, 16% faster than on 16 and 20% faster than
@@ -143,7 +155,8 @@ on all 22; the 360M on 4, 10% and 15% faster; the 1.7B wants 12 or more ([`NOTES
 options go between `+RTS` and `-RTS`, before the program's arguments:
 `./gen +RTS --threads 8 -RTS data/smollm2-135m "Once upon a time" 32`.
 
-The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
+The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`, and each
+one's instruct checkpoint (`MODEL=smollm2-360m-instruct`).
 Every loader reads the downloaded `model.safetensors` itself, so `make prep` writes no copy of the weights;
 `make prep F32=1` also writes the F32 copies (`w/<name>.bin`, 6.4 GB for the 1.7B) that `bend-ml-llama@0.2.0.0`'s
 loader reads.
@@ -183,8 +196,9 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
   `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host
   memory (2026-11-01, Bend 2.0.39).
-- Base models only. The chat template is in (`--chat`), but `reference/models.py` does not pin the instruct checkpoints
-  yet, so a chat runs on a base model and answers like one. Sampling matches its Python twin, not `transformers`' own
+- One chat turn. `--chat` sends one user message after the template's default system message; a conversation of
+  several turns, or a system message of one's own, is not in `gen` yet (the template in Bend takes both:
+  `reference/test_chat.py`). Sampling matches its Python twin, not `transformers`' own
   sampler (whose random numbers are PyTorch's); it runs on the CPU path only (`gen_gpu.bend` stays greedy), needs a
   top-k (k >= 1), and its cost grows with k (not timed yet). A special token written inside a chat message is encoded
   as text. The vectors between layers are lists whose length is not in their type, and the numerics are tested, never
