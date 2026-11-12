@@ -1041,16 +1041,17 @@ def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, 
 # a position for generation: the same logits, caches and model, with the activations left empty, since generation
 # never reads them (about a fifth faster per token on 16 threads, llama.bend NOTES, 2026-10-16). One band (d = 0)
 # kept them until 2026-11-12, since leaving them out had measured 4-11% slower on one thread with Bend 2.0.37. On
-# 2.0.40 it measures from the same to 4% faster on an idle machine, and 10 to 16% faster while the screen is
-# changing (NOTES, 2026-11-12)
+# 2.0.40 it measures from the same to 4% faster on an idle machine, and 10 to 16% faster while the desktop is
+# redrawing (NOTES, 2026-11-12)
 def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
     case Model{+d, emb, ls, +lnf}:
       forward.go(False{}, c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
 
 # a prompt position, whose logits nobody reads: the layers and the caches as forward_gen gives them (the activations
-# empty on one band too, as there), without the final norm and the product by the embedding (vocab x dim, the largest
-# of a position), so lg and nf are empty
+# empty on one band too since 2026-11-12, as there: the same on an idle machine, 5 to 12% off the time to the first
+# token while the desktop is redrawing), without the final norm and the product by the embedding (vocab x dim, the
+# largest of a position), so lg and nf are empty
 def pre_of(-c: Cfg, -cap: Nat, -t: Nat, +d: Nat, emb: TA.Bands<Cfg.vocab(c), Cfg.dim(c)>, +lnf: List<&2, F32>, r: Run<c, cap, t>) -> Out<c, cap, t>:
   match r:
     case Run{x, ls, cs, acts}:
