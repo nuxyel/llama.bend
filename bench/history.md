@@ -12,7 +12,13 @@ detected by `.github/workflows/bend-release.yml`, which opens an issue.
 | 2026-10-24 | 2.0.38 | e0de45a | 120.2 | 64.2 | 2.0.37: 121.5 / 62.1 | 5 |
 | 2026-10-24 | 2.0.39 | e0de45a | 116.4 | 60.5 | 2.0.38: 119.7 / 64.1 | 5 |
 | 2026-11-01 | 2.0.39 | 998a3e0 | 122.3 | 60.2 | 2.0.38: 123.7 / 63.9 | 5 |
+| 2026-11-12 | 2.0.40 | bc50732 | 79.1 | 60.1 | 2.0.39: 82.5 / 58.9 | 5 |
 
 The row of 2026-11-01 is no new release: 2.0.39 measured again at the commit of the `BENCHMARK.md` refresh of that day,
 against 2.0.38 on the same commit. Against 2026-10-24 the one-thread number is 5% higher (116.4 to 122.3), within the
 spread between sessions on this machine.
+
+The row of 2026-11-12 is 2.0.40 against 2.0.39 on `bc50732` (v1.5.2's code): 4.1% faster on one thread and 2.0%
+slower on 16, both pairs of ranges apart (78.8-80.6 against 81.4-82.8 ms; 59.8-60.7 against 58.0-59.1). The
+benchmark's harness had the same two directions on 2026-11-07, inside overlapping ranges then. Between this row and
+the one above it the code changed too: v1.5.0's unrolled dot product took one thread from about 120 ms to about 80.
