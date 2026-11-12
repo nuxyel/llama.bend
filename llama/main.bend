@@ -1038,13 +1038,14 @@ def forward_k(+keep: Bool, +c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1
 def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   forward_k(True{}, c, cap, t, m, cs, room, tok)
 
-# a position for generation: the same logits, caches and model. With bands (d > 0, more than two threads) the
-# activations are left empty, about a fifth faster per token on 16 threads; with one band (d = 0) they are kept, since
-# leaving them out measured 4-11% slower per token on one thread (llama.bend NOTES, 2026-10-16), for no reason found yet
+# a position for generation: the same logits, caches and model, with the activations left empty, since generation
+# never reads them (about a fifth faster per token on 16 threads, llama.bend NOTES, 2026-10-16). One band (d = 0, two
+# threads or fewer) kept them until 2026-11-11: leaving them out had measured 4-11% slower on one thread with Bend
+# 2.0.37, from where clang placed the product's loop, not from the work
 def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
     case Model{+d, emb, ls, +lnf}:
-      forward.go(Nat.is_eq(d, 0n), c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
+      forward.go(False{}, c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
 
 # a prompt position, whose logits nobody reads: the layers and the caches as forward_gen gives them, without the final
 # norm and the product by the embedding (vocab x dim, the largest of a position), so lg and nf are empty
