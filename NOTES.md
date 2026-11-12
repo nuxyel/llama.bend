@@ -1847,3 +1847,52 @@ the caches stay between the turns.
   system message of one's own is not in `gen`. The package has no call that returns a whole answer at once, as
   `generate` does for a prompt: a caller walks `Turn`, as `demo/gen.bend`'s `say` does.
 
+## The pass's heads in sequence (2026-11-12)
+
+The prompt's pass gained little from threads on the two small models and lost time from 8 threads on (two entries
+above). The products were not the reason.
+
+- **What pointed away from the products.** With the model in two bands whatever the thread count, the 135M's 56-id
+  prompt took 841, 904, 1012, 1090 and 1125 ms on 2, 4, 8, 16 and 22 threads (a diagnosis on a busy machine): the
+  same two tasks, slower with every thread added. And the process's system time grew with the threads, from 0.09 s
+  on one to 2.2 s on 16.
+- **Why.** `block_p` passed the model's band depth to `attention`, so every position's key/value heads ran in a
+  parallel let: a few microseconds of work each, 1,680 times for 56 positions and 30 layers, in the stretch between
+  two products, which runs on one thread. For a parallel let the runtime wakes every worker thread; each finds
+  nothing left to do, yields a while and sleeps again. That is processor time on the other cores and wall time
+  for the one thread that works. Generation has the same fork right after its products' own, and there I could not
+  measure a cost: 64 tokens within 3% with the heads in sequence or in parallel, on 4 to 22 threads (a diagnosis).
+- **The change.** In the pass `attention` runs at depth 0, a position's heads one after another, whatever the
+  model's depth; `atts`, `block_p` and `run_p` lose their depth parameter. Generation is untouched. The commit before
+  it makes a fork of the band product clone the positions once instead of twice (15 copies for 16 bands instead of
+  31), which I could only see on the 135M (a diagnosis: 734 to 675 ms on 8 threads).
+- **The same bits.** Each head is computed the same way in both orders. `reference/test_prompt.py` compares the pass
+  with the position-by-position path, whose heads still run in parallel on 16 threads: the same ids, logit bits and
+  text. The checklist on a busy machine: `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures
+  each), `make bits` on 22 threads and on one (23 outputs identical), `test_gen.py` and `test_prompt.py` on the 360M
+  and on the 1.7B, `test_chat_gen.py` and `test_chat_turns.py` on the 360M-Instruct and on the 1.7B-Instruct.
+- **Measured** in an idle round (18:42 to 18:56, nobody at the machine), the two commits together, `e0c785d` against
+  `6211b24`: ms from the start of the prompt to the first new token, before → now, medians of 5 alternated rounds (3
+  for the 1.7B, which ran on 8 threads and more).
+
+  | model, prompt ids | 1 thread | 4 | 8 | 16 | 22 |
+  |---|---|---|---|---|---|
+  | 135M, 56 | 1116 → 1108 | 783 → 655 | 872 → 711 | 1036 → 721 | 1052 → 657 |
+  | 135M, 77 | 1531 → 1515 | 1066 → 904 | 1184 → 966 | 1408 → 977 | 1419 → 925 |
+  | 360M, 56 | 2893 → 2886 | 1619 → 1443 | 1653 → 1538 | 1784 → 1474 | 1879 → 1391 |
+  | 360M, 77 | 3930 → 3881 | 2160 → 1994 | 2269 → 2070 | 2532 → 2038 | 2659 → 1989 |
+  | 1.7B, 25 | | | 2403 → 2340 | 2411 → 2261 | 2314 → 2246 |
+  | 1.7B, 77 | | | 6865 → 6538 | 7131 → 6387 | 7198 → 6325 |
+
+  On one thread nothing changes: three of the four pairs of ranges overlap, and the 135M's 56 ids take 35.11 and
+  35.09 G instructions. On more threads every pair of ranges is apart: the 135M's pass is 15% to 38% faster on 4 to
+  22 threads, the 360M's 7% to 26%, the 1.7B's 3% to 12% on 8 to 22. The process that loads the 135M and runs the 56
+  ids and one token spent 2.20 s in the kernel on 16 threads and spends 0.37 s now, with 89,740 and 20,709 voluntary
+  context switches (22 threads: 3.38 and 0.48 s, 128,303 and 22,094; one thread: 0.09 s and about 830 either way).
+- **What is left.** The small models no longer lose time past 4 threads, and they gain none: the 135M's 56 ids take
+  655, 711, 721 and 657 ms on 4, 8, 16 and 22. What runs between the products is about half of one thread's time
+  and stays on one thread, and a layer's independent products (Q, K and V; gate and up) still run one after
+  another. The first tokens after the prompt, which are no control on many threads (two entries above), came out
+  between 8.1% faster and 1.8% slower after the change on 4 threads and more, faster in 19 of the 22 cases; I did
+  not look into it.
+- Raw rows: [`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
