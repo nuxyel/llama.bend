@@ -1,6 +1,7 @@
 # Generation with a Llama model in Bend, on the package in llama/ (bend-ml-llama): the prompt is tokenized in Bend
-# (tok.bend), runs through the forward pass position by position (main.bend, one key/value cache per layer), and then
-# each new token is chosen from the logits and fed back in (gen.bend's loop): the argmax (greedy, the default), or a
+# (tok.bend), runs through the forward pass in one pass (prompt.bend; one key/value cache per layer), and then each
+# new token runs through it at its position (main.bend), is chosen from the logits and is fed back in (gen.bend's
+# loop): the argmax (greedy, the default), or a
 # draw with temperature, top-k and top-p from a seed. Generation stops after n tokens, or after the end-of-text token
 # (id 0), as transformers' generate does; in chat mode after <|im_end|> (id 2) too. This file is the command line: it
 # loads the weights with llama/load.bend and prints each token as the loop hands it over, with its time.
@@ -18,7 +19,8 @@
 # prints `prompt ids: ...`, one line per new token (`id <id> logit <F32 bits> <logit> t=<seconds>`) and
 # `text: <prompt and continuation>` (special tokens left out); a sampled run first prints `sampling: ...` with the
 # parameters as read (F32 bits). With GEN_CANDS=1 in the environment, each draw is preceded by `cands <id>:<logit
-# bits> ...`, the top-k candidates largest first (for reference/test_sample.py).
+# bits> ...`, the top-k candidates largest first (for reference/test_sample.py). With GEN_SEQ=1 the prompt runs
+# position by position, the path before prompt.bend, which gives the same output (reference/test_prompt.py).
 
 import Base
 import ../llama/main.bend as M
@@ -57,24 +59,39 @@ def show_cands(cs: List<&2, M.Cand>) -> String:
     case Con{M.Cand{+v, i}, t}:
       " " ++ Nat.show(i) ++ ":" ++ U32.show(bits(v)) ++ show_cands(t)
 
-# how the tokens are chosen (pk), whether this is a chat (chat) and whether draws print their candidates (show)
+# how the tokens are chosen (pk), whether this is a chat (chat), whether draws print their candidates (show) and
+# whether the prompt runs position by position (seq)
 type Opts is Data:
-  Opts{pk: G.Pick, chat: Bool, show: Bool}
+  Opts{pk: G.Pick, chat: Bool, show: Bool, seq: Bool}
 
 def Opts.pk(o: Opts) -> G.Pick:
   match o:
-    case Opts{pk, chat, show}:
+    case Opts{pk, chat, show, seq}:
       pk
 
 def Opts.chat(o: Opts) -> Bool:
   match o:
-    case Opts{pk, chat, show}:
+    case Opts{pk, chat, show, seq}:
       chat
 
 def Opts.show(o: Opts) -> Bool:
   match o:
-    case Opts{pk, chat, show}:
+    case Opts{pk, chat, show, seq}:
       show
+
+def Opts.seq(o: Opts) -> Bool:
+  match o:
+    case Opts{pk, chat, show, seq}:
+      seq
+
+# the new tokens after the prompt: the prompt in one pass (llama/prompt.bend), or position by position when seq is
+# set (GEN_SEQ=1), which reference/test_prompt.py compares with it
+def toks(seq: Bool, +c: M.Cfg, model: M.Model<c>, +pk: G.Pick, +chat: Bool, +ids: List<&2, Nat>, +n: Nat) -> G.Toks<c>:
+  match seq:
+    case True{}:
+      G.tokens.seq(c, model, pk, chat, ids, n)
+    case False{}:
+      G.tokens(c, model, pk, chat, ids, n)
 
 # the top-k candidates of a draw, when show is set (GEN_CANDS); a greedy token has none
 def cands(show: Bool, pk: G.Pick, cs: List<&2, M.Cand>) -> IO(Unit):
@@ -123,7 +140,7 @@ def start2(+c: M.Cfg, model: M.Model<c>, +o: Opts, tb: K.Tables, +ids: List<&2, 
         t0ms : Nat <- IO.now()
         show_pick(Opts.pk(o))
         IO.print("prompt ids: " ++ show_nats(ids))
-        gen : List<&2, Nat> <- show_toks(n, c, o, t0ms, G.tokens(c, model, Opts.pk(o), Opts.chat(o), ids, n), Nil{})
+        gen : List<&2, Nat> <- show_toks(n, c, o, t0ms, toks(Opts.seq(o), c, model, Opts.pk(o), Opts.chat(o), ids, n), Nil{})
         IO.print("text: " ++ K.decode(tb, List.append(&2, Nat, ids, gen)))
 
 # the prompt's ids: its text, or in chat mode one user turn in SmolLM2-Instruct's template
@@ -151,7 +168,8 @@ def run2(mt: Maybe<&2, K.Tables>, +dir: String, +o: Opts, prompt: String, n: Nat
 def usage() -> IO(Unit):
   IO.print("usage: gen <dir> [--chat] <prompt> <n_tokens> [<temp> <top_k> <top_p> <seed>] (temp >= 0, top_k >= 1, 0 < top_p <= 1)")
 
-# GEN_CANDS=1: print the candidates of each draw
+# whether a variable of the environment is "1": GEN_CANDS=1 prints the candidates of each draw, GEN_SEQ=1 runs the
+# prompt position by position
 def cands_env(r: Result<&1, &1, U32 & String, String>) -> Bool:
   match r:
     case Done{v}:
@@ -164,8 +182,9 @@ def run1(+dir: String, +chat: Bool, prompt: String, mn: Maybe<&2, Nat>, mp: Mayb
     case Some{n} Some{pk}:
       do IO<Unit>:
         r : Result<&1, &1, U32 & String, String> <- IO.get_env("GEN_CANDS")
+        q : Result<&1, &1, U32 & String, String> <- IO.get_env("GEN_SEQ")
         mt : Maybe<&2, K.Tables> <- K.read_tables(dir ++ "/merges_num.txt", dir ++ "/perm.txt")
-        run2(mt, dir, Opts{pk, chat, cands_env(r)}, prompt, n)
+        run2(mt, dir, Opts{pk, chat, cands_env(r), cands_env(q)}, prompt, n)
     case _ _:
       usage()
 
