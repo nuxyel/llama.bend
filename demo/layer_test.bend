@@ -62,8 +62,8 @@ def go(xs: List<&2, List<&2, F32>>, +c: M.Cfg, +d: Nat, -cap: Nat, +t: Nat, -inv
 def run(+dir: String, +layer: Nat, path: String, +n: Nat) -> IO(Unit):
   do IO<Unit>:
     threads : U32 <- IO.thread_count()
-    +d : Nat = M.depth_for(threads)
     +c : M.Cfg <- M.read_cfg(dir)
+    +d : Nat = M.depth_in(c, threads)
     lw : M.LW<c> <- M.load_lw(c, dir, layer, d)
     IO.print("inv_freq" ++ show_bits(M.inv_freq(c)))
     xs : List<&2, F32> <- M.read_floats(path, Nat.mul(n, M.Cfg.dim(c)))
