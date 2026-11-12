@@ -40,6 +40,8 @@ check: laws       ## the laws, prep, the Bend tokenizer and chat template agains
 	[ -f $(DIR)/test/gen.json ] || $(PY) reference/gen_ref.py
 	bend demo/gen.bend -o .scratch/gen
 	$(PY) reference/test_gen.py .scratch/gen
+	[ -f $(DIR)/test/chat_gen.json ] || $(PY) reference/chat_gen_ref.py
+	$(PY) reference/test_chat_gen.py .scratch/gen
 	bend demo/sample_test.bend -o .scratch/sample_test
 	$(PY) reference/test_sample.py .scratch/sample_test .scratch/gen
 	$(PY) scripts/rts_probe.py .scratch/gen $(DIR) "Once upon a time" 24
