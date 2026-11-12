@@ -1613,3 +1613,69 @@ and the same `tokenizer.json` (sha256 9ca9acdd...), with other weights, so `--ch
   tests, so that is no measurement; most of it is the 33 to 52 prompt tokens, which run one position at a time.
 - Left for the chat: several turns and a system message of one's own on `gen`'s command line (the template in Bend
   already takes them), and keeping the key/value cache between turns.
+
+## The package holds the tokenizer and the generation loop (2026-11-12)
+
+Until today `bend-ml-llama` was `llama/main.bend` alone, and a program that wanted to go from a prompt to tokens had
+to copy about 1,000 lines from `demo/`: the tokenizer, the chat template and the generation loop. I moved them into
+`llama/` as files of the package. `llama/main.bend`, `load.bend` and `gpu.bend` did not change.
+
+- **What moved.** `demo/tok.bend` and `demo/unicode.bend` became `llama/tok.bend` and `llama/unicode.bend` (`git mv`;
+  the command line the tests drive is `demo/tok.bend` again, 96 lines on the library). The loop of `demo/gen.bend`
+  (`Pick`, the choice of a token, the stop rule, `loop`) became `llama/gen.bend`; `demo/gen.bend` keeps the command
+  line and the printing, and `demo/gen_gpu.bend` its own loop over `gpu.bend`'s model. `utf8_of` (a `String` as UTF-8
+  bytes) went from `demo/gen.bend` to `tok.bend`. `forward.bend`, `layer_test.bend` and `sample_test.bend` were
+  already callers of `main.bend` (and of `load.bend`) and nothing else, so they did not change.
+- **The API.** `tok.bend`: `Tables` (the merge rules and the byte permutation, built once), `load(dir)`,
+  `read_tables(merges, perm)`, `encode(tb, text)`, `decode(tb, ids)` and `chat(tb, ms, gen)`, over the byte-level
+  `encode_text`, `decode_text` and `chat_ids`, which keep their signatures. `gen.bend`: `Pick` (`Greedy`, `Draw`),
+  `choose`, `generate(c, m, pk, chat, ids, n)`, which returns the tokens (the id and logit of each) and hands the
+  model back, and `tokens`, the same loop one token at a time. `llama/README.md` lists every name.
+- **Tokens one at a time, without a callback.** `demo/gen.bend` prints each token with its time, so the loop cannot
+  only return a list. A closure can be called once in Bend, so a callback per token would have to be a template
+  (`~f`), which cannot capture the start time or the flags. `tokens` returns a value instead: `Tok{am, cs, m, rest}` is
+  one new token, the model, and the rest of the generation, which runs when it is given the model back (`rest(m)`),
+  like the next step of a generator; `End{m}` is the end. The caller walks it: `demo/gen.bend` prints a line and asks
+  for the rest, `generate` collects (`take`). The loop is the old one, recursing inside `Out.then`'s closure, with its
+  two forward calls as they were.
+- **A draw's candidates are computed once.** `choose` calls the two halves of `sample`, `topk` and `sample.cs`, and
+  hands the candidates out with the token, so `GEN_CANDS=1` prints the list the draw used. Before, the demo called
+  `sample` and then `topk` again to print it. The F32 operations and their order are the same, and
+  `reference/test_sample.py` finds the same draws.
+- **One change in order, none in output.** `read_tables` parses the merges file, checks it and builds the rules in one
+  call, so `gen` builds the rules before it loads the weights (it built them after). A malformed table is still
+  refused before anything else is read.
+- **The entry.** `llama/package.bend` imports the other four files, because `--publish` sends an entry and what it
+  imports; BendTorch's entry has the same name. `make laws` runs `bend` and `--verdict` on each of the five files
+  (`ALL PROOFS CHECK` from each), fails on an import of `load.bend`, of binary-read or of a file outside `llama/`, and
+  fails if the entry misses a file. A package file must not name tensor-gpu or `gpu.bend` even in a comment: the grep
+  that guards `main.bend` reads all five.
+- **A program on the package alone.** `demo/hello.bend`, 19 lines of code: the tables, the config and the model (with
+  `main.bend`'s plain-Bend loader), a prompt encoded, n greedy tokens, the ids printed. `make check` builds it from a
+  copy of the five files in `.scratch/pkg`, where an import from outside the package does not compile, and compares its
+  128 tokens for "Once upon a time" with `bench/expected-<MODEL>.txt` (`reference/test_hello.py`): the same on the
+  135M and on the 360M (about 11 and 22 s on a busy machine). The same from a folder outside the repository that
+  holds a copy of the five files, `hello.bend` and nothing else. An absolute path cannot stand in for the copy: Bend
+  refuses an import path with a segment that is not a plain name, and this repository's folder is `llama.bend`.
+- **No bit moved.** Before the first change I saved the output of 22 `gen` command lines (greedy, sampled, chat,
+  `GEN_CANDS=1`, one thread, bad arguments, an empty prompt, a malformed table), 18 of `tok` and 8 of `gen_gpu` with its
+  bangs on the CPU threads; after the last change the 48 outputs are byte for byte the same, the times aside. A base
+  model never emits `<|im_end|>` in them, so I also ran four chat turns on the 135M's instruct checkpoint: two greedy
+  ones and a sampled one stop at `<|im_end|>`, one runs its 64 tokens, each the same before and
+  after. The checklist (`docs/release.md`, section 2) on Bend 2.0.40, a busy machine, so no timing here is a
+  measurement: `make laws`; `make check` on the 135M (0 failures, the thread probe on 1.00 and 7.21 cores); `make bits`
+  on 16 threads and on one (23 outputs identical to the saved bits); `reference/test_gen.py` on the 360M (12 prompts and
+  the two malformed tables, 0 failures); `make bench`, `make bench-gpu` and `GPU=off` (transformers' tokens); the
+  emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`); `make lint`: 0 findings, 12 suppressed, as
+  before (one run of six stopped with the checker's "Maximum call stack size exceeded" on `demo/gen_gpu.bend`, as on
+  2026-10-28; run again, it passed). I did not run the 1.7B.
+- **Not done.** Nothing is published: `bend-ml-llama@0.2.1.1` on BendHub is still `main.bend` alone, and the READMEs'
+  import lines stay as they are until the next version goes out from `llama/package.bend`.
+- **Debt: a first law for the tokenizer.** I wanted "the pieces of the pre-tokenizer, joined, are the input bytes". As
+  the code stands it is false on the list the pre-tokenizer works on, where every byte carries its class as a tag: the
+  piece "space + run" is rebuilt from the space's byte without its tag, so "a b" goes in as `97 800 98` and comes out as
+  `97` and `32 98`. It can hold once the tags are taken off (`nats_of`, the next step), but stating it there needs
+  `U32.mod(U32.mod(c, 256), 256) == U32.mod(c, 256)`, and the only fact Base proves about U32 arithmetic is
+  `U32.add_comm`. Keeping the tagged byte in that piece would make the statement true on the tagged list without
+  changing an id; the proof would still need "every piece is non-empty" for the fuel of `split`, over the five kinds of
+  piece. Left for a session of its own.
