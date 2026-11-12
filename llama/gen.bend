@@ -12,7 +12,9 @@
 # shows each token as it comes walks G.Toks, as llama.bend's demo/gen.bend does.
 
 import Base
+import bend-ml-tensor-array@0.1.20.0/main.bend as TA
 import ./main.bend as M
+import ./prompt.bend as P
 
 # how each new token is chosen: the argmax (greedy, transformers' do_sample = False), or a draw (main.bend's sample)
 # with temperature temp > 0, the k >= 1 largest logits, top-p p in (0, 1], and draw j of the seed for the j-th new
@@ -91,14 +93,47 @@ def loop(fuel: Nat, +c: M.Cfg, +pk: Pick, +chat: Bool, -cap: Nat, +t: Nat, -inv:
         +id = M.AM.i(Chosen.am(x))
         Tok{Chosen.am(x), Chosen.cs(x), m2, m3 => loop(p, c, pk, chat, cap, 1n+t, M.step_inv(t, p, cap, inv), id, Nil{}, left_chat(chat, id, lp), 1n+j, m3, cs2)})
 
-# the new tokens after the prompt ids, n at most, one at a time: the prompt runs first, then the first token is
-# chosen. An empty prompt gives no token (a Llama needs one position to start from).
-def tokens(+c: M.Cfg, m: M.Model<c>, +pk: Pick, +chat: Bool, +ids: List<&2, Nat>, +n: Nat) -> Toks<c>:
+# the prompt's positions one after another (main.bend's forward_pre), then the new tokens: the path of a prompt of
+# one id, where there is nothing to share
+def tokens.seq(+c: M.Cfg, m: M.Model<c>, +pk: Pick, +chat: Bool, +ids: List<&2, Nat>, +n: Nat) -> Toks<c>:
   match ids:
     case Nil{}:
       End{m}
     case Con{+t0, qt}:
       loop(Nat.add(List.length(&2, Nat, ids), n), c, pk, chat, Nat.add(List.length(&2, Nat, ids), n), 0n, {==}, t0, qt, n, 0n, m, M.caches(c, M.Cfg.layers(c), Nat.add(List.length(&2, Nat, ids), n)))
+
+# after a prompt of plen ids that ran in one pass (prompt.bend): its last position's logits choose the first new
+# token, and the loop goes on at position plen with the caches the pass grew; 1 + lp tokens were asked for
+def after(+c: M.Cfg, +pk: Pick, +chat: Bool, -cap: Nat, +plen: Nat, +lp: Nat, -inv: {Nat.add(plen, 1n+lp) == cap : Nat}, o: P.OutP<c, cap, plen>) -> Toks<c>:
+  P.OutP.then(Toks<c>, c, cap, plen, o, lg => cs => m =>
+    +x = choose(pk, lg, 0n)
+    +id = M.AM.i(Chosen.am(x))
+    Tok{Chosen.am(x), Chosen.cs(x), m, m2 => loop(1n+lp, c, pk, chat, cap, plen, inv, id, Nil{}, left_chat(chat, id, lp), 1n, m2, cs)})
+
+# pp: the prompt's ids but one. One id runs position by position; two or more go through each layer together, with
+# room for the prompt and the 1 + lp new tokens
+def tokens.pick(pp: Nat, +lp: Nat, +c: M.Cfg, m: M.Model<c>, +pk: Pick, +chat: Bool, +ids: List<&2, Nat>) -> Toks<c>:
+  match pp:
+    case 0n:
+      tokens.seq(c, m, pk, chat, ids, 1n+lp)
+    case 1n++q:
+      after(c, pk, chat, Nat.add(2n+q, 1n+lp), 2n+q, lp, {==}, P.forward_prompt(c, Nat.add(2n+q, 1n+lp), 0n, 2n+q, 2n+q, {==}, TA.leb_up(2n+q, 2n+q, 1n+lp, TA.leb_refl(2n+q)), m, M.caches(c, M.Cfg.layers(c), Nat.add(2n+q, 1n+lp)), ids))
+
+# n: the tokens asked for; plen: the prompt's ids. No token asked for, or an empty prompt, gives none (a Llama needs
+# one position to start from)
+def tokens.by(n: Nat, plen: Nat, +c: M.Cfg, m: M.Model<c>, +pk: Pick, +chat: Bool, +ids: List<&2, Nat>) -> Toks<c>:
+  match n plen:
+    case 0n _:
+      End{m}
+    case 1n+lp 0n:
+      End{m}
+    case 1n+lp 1n+pp:
+      tokens.pick(pp, lp, c, m, pk, chat, ids)
+
+# the new tokens after the prompt ids, n at most, one at a time: the prompt runs first, then the first token is
+# chosen
+def tokens(+c: M.Cfg, m: M.Model<c>, +pk: Pick, +chat: Bool, +ids: List<&2, Nat>, +n: Nat) -> Toks<c>:
+  tokens.by(n, List.length(&2, Nat, ids), c, m, pk, chat, ids)
 
 # the new tokens (the id and logit of each, in order) and the model handed back
 type Gen<-c: M.Cfg> is Type:
