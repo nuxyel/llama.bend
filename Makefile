@@ -27,7 +27,7 @@ laws:             ## every file of the package checked by bend and again by the 
 	for f in $(PKG); do echo "== $$f"; bend $$f && bend $$f --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK" || exit 1; done
 	scripts/check_rejected.sh
 
-check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin
+check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
 	$(PY) reference/prep.py --check
 	mkdir -p .scratch
 	bend demo/tok.bend -o .scratch/tok
@@ -47,6 +47,10 @@ check: laws       ## the laws, prep, the Bend tokenizer and chat template agains
 	$(PY) reference/test_chat_gen.py .scratch/gen
 	bend demo/sample_test.bend -o .scratch/sample_test
 	$(PY) reference/test_sample.py .scratch/sample_test .scratch/gen
+	[ -f bench/expected-$(MODEL).txt ] || $(PY) reference/bench_ref.py
+	rm -rf .scratch/pkg && mkdir -p .scratch/pkg/llama .scratch/pkg/demo && cp $(PKG) .scratch/pkg/llama && cp demo/hello.bend .scratch/pkg/demo
+	bend .scratch/pkg/demo/hello.bend -o .scratch/hello
+	$(PY) reference/test_hello.py .scratch/hello
 	$(PY) scripts/rts_probe.py .scratch/gen $(DIR) "Once upon a time" 24
 
 bits:             ## forward and gen give the same bits as the saved ones ($(DIR)/test/bits/; `bits.py save` writes them)
