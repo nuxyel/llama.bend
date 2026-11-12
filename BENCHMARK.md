@@ -106,6 +106,29 @@ before). I did not measure the other systems' time to the first token. The rest 
 (2026-11-12), with the raw rows in [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/) and
 [`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
 
+## A conversation: the first token of a later turn
+
+`gen --chat -` keeps a conversation's caches between its turns, so a turn runs its own tokens and nothing before
+them. On the instruct checkpoints at `e0c785d`, in the idle round of 2026-11-12 (18:57 to 19:11): milliseconds from
+a turn's line to the first token of its answer, with the caches kept → with the conversation so far run again as
+one prompt; medians of 5 alternated rounds (3 for the 1.7B). The conversations are the first and the third of
+`reference/chat_turns_ref.py`; the first one's later turns have 15 and 19 tokens of their own in conversations of 59
+and 85, the third one's 17 and 13 in 93 and 130.
+
+| model, threads | conversation 1: turn 2 | turn 3 | conversation 3: turn 2 | turn 3 |
+|---|---|---|---|---|
+| SmolLM2-135M-Instruct, 1 | 389 → 1169 | 487 → 1674 | 466 → 1836 | 391 → 2602 |
+| SmolLM2-135M-Instruct, 16 | 318 → 777 | 407 → 1087 | 390 → 1203 | 331 → 1743 |
+| SmolLM2-360M-Instruct, 1 | 1005 → 3004 | 1223 → 4273 | 1186 → 4654 | 1012 → 6500 |
+| SmolLM2-360M-Instruct, 16 | 561 → 1579 | 739 → 2281 | 712 → 2481 | 624 → 3507 |
+| SmolLM2-1.7B-Instruct, 16 | 1909 → 4763 | 2461 → 7224 | | |
+
+A later turn's first token comes 2.4 to 6.7 times sooner with the caches kept. The kept turn's time includes
+encoding its text (16 to 21 ms for these turns, timed alone on a busy machine); the one-prompt runs were given their
+ids. A first turn has nothing to keep: it took 49 to 104 ms longer than the same tokens as one prompt, which is
+that encoding. Every answer has the same tokens and logit bits both ways. I did not measure the other systems on a
+conversation. Raw rows: [`bench/2026-11-12-chat-turns/`](bench/2026-11-12-chat-turns/).
+
 ## Longer generations: 512 tokens
 
 | model | llama.bend, 1 / 16 threads | llama.cpp, 1 / 16 threads |
