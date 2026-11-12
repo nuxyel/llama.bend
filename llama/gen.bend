@@ -7,9 +7,15 @@
 #   import ./gen.bend as G
 #   G.generate(c, model, G.Greedy{}, False{}, ids, n)                  # G.Gen{toks, m}: the new tokens and the model
 #   G.tokens(c, model, G.Draw{0.8, 50n, 0.95, 42}, False{}, ids, n)    # the same loop, one token at a time (G.Toks)
+#   G.turn(c, G.Greedy{}, cap, G.Chat.start(c, cap), model, ids, n)    # a conversation's next answer (G.Turn); it
+#                                                                      # hands the conversation back, caches and all
 #
 # The model is a parameter, so the caller chooses its loader. Nothing here prints or reads a clock: a program that
 # shows each token as it comes walks G.Toks, as llama.bend's demo/gen.bend does.
+#
+# A conversation (the last section) keeps its caches between the turns: a turn's ids go through the layers in one
+# pass on top of the positions already there, and the answer is generated after them, so no turn runs the ones before
+# it again. Its answers are the tokens that `tokens` gives for the whole conversation up to each of them.
 
 import Base
 import bend-ml-tensor-array@0.1.20.0/main.bend as TA
@@ -178,3 +184,158 @@ def ids_of(toks: List<&2, M.AM>) -> List<&2, Nat>:
       Nil{}
     case Con{M.AM{i, v}, t}:
       i <> ids_of(t)
+
+# =====================================================================================================
+# A conversation that keeps its caches
+# =====================================================================================================
+
+# k positions out of room: what is left, with the equation that says so (room = k + rest), or Short when k is more
+# than the room. The equation is what turns a count made at run time into the proofs the caches ask for
+type Fit<-k: Nat, -room: Nat> is Type:
+  Fits{rest: Nat, e: {Nat.add(k, rest) == room : Nat}}
+  Short{}
+
+# a = b gives 1 + a = 1 + b
+def succ_eq(-a: Nat, -b: Nat, e: {a == b : Nat}) -> {1n+a == 1n+b : Nat}:
+  %e : {1n+a == 1n+_ : Nat}
+  {==}
+
+# one more on both sides: when k out of room leave rest, 1 + k out of 1 + room leave the same rest
+def fit.up(-p: Nat, -q: Nat, f: Fit<p, q>) -> Fit<1n+p, 1n+q>:
+  match f:
+    case Fits{rest, e}:
+      Fits{rest, succ_eq(Nat.add(p, rest), q, e)}
+    case Short{}:
+      Short{}
+
+# k and room are counted down together. When k ends first, what is left of the room is the rest, and 0 + rest = rest
+# holds by computing; when the room ends first, k was more than the room. On the way back every step adds one to
+# both sides of the equation (fit.up)
+def fit(k: Nat, room: Nat) -> Fit<k, room>:
+  match k room:
+    case 0n _:
+      Fits{room, {==}}
+    case 1n+p 0n:
+      Short{}
+    case 1n+p 1n+q:
+      fit.up(p, q, fit(p, q))
+
+# t + room = cap and k + rest = room give (t + k) + rest = cap: after k more positions the room is rest. Proof: cap
+# is t + room (inv) and room is k + rest (e), so the claim is (t + k) + rest = t + (k + rest), which is add_assoc
+def room_inv(+t: Nat, -k: Nat, -rest: Nat, -room: Nat, -cap: Nat, e: {Nat.add(k, rest) == room : Nat}, inv: {Nat.add(t, room) == cap : Nat}) -> {Nat.add(Nat.add(t, k), rest) == cap : Nat}:
+  %inv : {Nat.add(Nat.add(t, k), rest) == _ : Nat}
+  %e : {Nat.add(Nat.add(t, k), rest) == Nat.add(t, _) : Nat}
+  M.add_assoc(t, k, rest)
+
+# and so the k positions fit: t + k <= cap. Proof: cap is (t + k) + rest (room_inv), and a number is at most itself
+# plus another (tensor-array's leb_up over leb_refl)
+def room_le(+t: Nat, +k: Nat, +rest: Nat, -room: Nat, -cap: Nat, e: {Nat.add(k, rest) == room : Nat}, inv: {Nat.add(t, room) == cap : Nat}) -> {True{} == TA.leb(Nat.add(t, k), cap) : Bool}:
+  %room_inv(t, k, rest, room, cap, e, inv) : {True{} == TA.leb(Nat.add(t, k), _) : Bool}
+  TA.leb_up(Nat.add(t, k), Nat.add(t, k), rest, TA.leb_refl(Nat.add(t, k)))
+
+# A conversation between two answers: its t positions are in the caches (one per layer, with room for cap), and pend
+# is the last answer's last token when it still has to go through the model: it does not after a stop token, and
+# there is none before the first turn
+type Chat<-c: M.Cfg, -cap: Nat> is Type:
+  Chat{t: Nat, pend: Maybe<&2, Nat>, cs: List<&1, M.KV<cap, t>>}
+
+# a conversation with no turn yet: empty caches with room for cap positions
+def Chat.start(+c: M.Cfg, +cap: Nat) -> Chat<c, cap>:
+  Chat{0n, None{}, M.caches(c, M.Cfg.layers(c), cap)}
+
+# why an answer ended. Stop: after <|im_end|> (id 2) or the end-of-text token (id 0). Count: the tokens asked for
+# were generated. Full: the caches are full, so the last token has no position to run at. Unfit: nothing ran, since
+# the turn's ids (need of them, the pending token among them) are more than the room. Idle: nothing ran, since the
+# turn had no id or no token was asked for
+type Why is Data:
+  Stop{}
+  Count{}
+  Full{}
+  Unfit{need: Nat}
+  Idle{}
+
+# An answer, one token at a time as Toks hands them: Said is a new token, the model handed back and the rest of the
+# answer, which runs when it is given that model again. Over: no more tokens, why, the model, the positions the
+# caches still have room for, and the conversation for the next turn
+type Turn<-c: M.Cfg, -cap: Nat> is Type:
+  Said{am: M.AM, cs: List<&2, M.Cand>, m: M.Model<c>, rest: M.Model<c> -> Turn<c, cap>}
+  Over{why: Why, m: M.Model<c>, room: Nat, chat: Chat<c, cap>}
+
+def is_stop(+id: Nat) -> Bool:
+  Bool.or(Nat.is_eq(id, 0n), Nat.is_eq(id, 2n))
+
+# an answer's last token as the conversation keeps it: a stop token is not kept
+def pend_of(+tok: Nat) -> Maybe<&2, Nat>:
+  Bool.pick(Maybe<&2, Nat>, is_stop(tok), None{}, Some{tok})
+
+# tok: the answer's last token so far, which runs at position t when another is asked for (left of them; j so far).
+# room counts the positions left, with t + room = cap (inv), as loop's fuel does. The answer is over when no token
+# is left to generate, or when no position is left to run tok at
+def turn.go(room: Nat, +c: M.Cfg, +pk: Pick, -cap: Nat, +t: Nat, -inv: {Nat.add(t, room) == cap : Nat}, +tok: Nat, left: Nat, +j: Nat, m: M.Model<c>, cs: List<&1, M.KV<cap, t>>) -> Turn<c, cap>:
+  match room left:
+    case _ 0n:
+      Over{Bool.pick(Why, is_stop(tok), Stop{}, Count{}), m, room, Chat{t, pend_of(tok), cs}}
+    case 0n 1n+lp:
+      Over{Full{}, m, 0n, Chat{t, pend_of(tok), cs}}
+    case 1n++p 1n+lp:
+      # bend-lint: disable-next bend-lint-rules/performance/unused_result -- nf is the logits' input, computed anyway; acts is empty not-expected-because: as in loop above
+      M.Out.then(Turn<c, cap>, c, cap, t, M.forward_gen(c, cap, t, m, cs, M.step_room(t, p, cap, inv), tok), lg => nf => acts => cs2 => m2 =>
+        +x = choose(pk, lg, j)
+        +id = M.AM.i(Chosen.am(x))
+        Said{Chosen.am(x), Chosen.cs(x), m2, m3 => turn.go(p, c, pk, cap, 1n+t, M.step_inv(t, p, cap, inv), id, left_chat(True{}, id, lp), 1n+j, m3, cs2)})
+
+# after the turn's ids ran in one pass: the last position's logits choose the answer's first token, and the answer
+# goes on at position t with the caches the pass grew; 1 + lp tokens were asked for
+def turn.first(+c: M.Cfg, +pk: Pick, -cap: Nat, +t: Nat, +room: Nat, -inv: {Nat.add(t, room) == cap : Nat}, +lp: Nat, o: P.OutP<c, cap, t>) -> Turn<c, cap>:
+  P.OutP.then(Turn<c, cap>, c, cap, t, o, lg => cs => m =>
+    +x = choose(pk, lg, 0n)
+    +id = M.AM.i(Chosen.am(x))
+    Said{Chosen.am(x), Chosen.cs(x), m, m2 => turn.go(room, c, pk, cap, t, inv, id, left_chat(True{}, id, lp), 1n, m2, cs)})
+
+# ids: the k ids the turn feeds, at positions t .. t + k - 1. When they fit in the room (f), they go through each
+# layer together (prompt.bend); when they do not, nothing runs and the conversation is handed back as it was
+def turn.fit(+c: M.Cfg, +pk: Pick, -cap: Nat, +t: Nat, +k: Nat, +room: Nat, f: Fit<k, room>, -inv: {Nat.add(t, room) == cap : Nat}, +pend: Maybe<&2, Nat>, +ids: List<&2, Nat>, +lp: Nat, m: M.Model<c>, cs: List<&1, M.KV<cap, t>>) -> Turn<c, cap>:
+  match f:
+    case Short{}:
+      Over{Unfit{k}, m, room, Chat{t, pend, cs}}
+    case Fits{+rest, e}:
+      turn.first(c, pk, cap, Nat.add(t, k), rest, room_inv(t, k, rest, room, cap, e, inv), lp, P.forward_prompt(c, cap, t, k, Nat.add(t, k), {==}, room_le(t, k, rest, room, cap, e, inv), m, cs, ids))
+
+# n: the tokens asked for; k: the ids the turn feeds
+def turn.by(n: Nat, k: Nat, +c: M.Cfg, +pk: Pick, -cap: Nat, +t: Nat, +room: Nat, -inv: {Nat.add(t, room) == cap : Nat}, +pend: Maybe<&2, Nat>, +ids: List<&2, Nat>, m: M.Model<c>, cs: List<&1, M.KV<cap, t>>) -> Turn<c, cap>:
+  match n k:
+    case 0n _:
+      Over{Idle{}, m, room, Chat{t, pend, cs}}
+    case 1n+lp 0n:
+      Over{Idle{}, m, room, Chat{t, pend, cs}}
+    case 1n+lp 1n++kp:
+      turn.fit(c, pk, cap, t, 1n+kp, room, fit(1n+kp, room), inv, pend, ids, lp, m, cs)
+
+# f: the room the caches have left after their t positions (cap = t + room). A conversation never holds more than
+# cap positions, so Short does not happen; it is answered as a full conversation
+def turn.room(+c: M.Cfg, +pk: Pick, -cap: Nat, +t: Nat, f: Fit<t, cap>, n: Nat, +pend: Maybe<&2, Nat>, +ids: List<&2, Nat>, m: M.Model<c>, cs: List<&1, M.KV<cap, t>>) -> Turn<c, cap>:
+  match f:
+    case Short{}:
+      Over{Full{}, m, 0n, Chat{t, pend, cs}}
+    case Fits{+room, inv}:
+      turn.by(n, List.length(&2, Nat, ids), c, pk, cap, t, room, inv, pend, ids, m, cs)
+
+# the ids a turn feeds: the last answer's pending token, when there is one, then the turn's own
+def feed(pend: Maybe<&2, Nat>, ids: List<&2, Nat>) -> List<&2, Nat>:
+  match pend:
+    case Some{x}:
+      x <> ids
+    case None{}:
+      ids
+
+# The conversation's next answer, n tokens at most, one at a time. ids continue the conversation after the last
+# answer: for the first turn the conversation's ids in the chat template (tok.bend's chat), and after an answer
+# <|im_end|> and what follows it (tok.bend's chat_next); the answer's last token goes before them when it was not a
+# stop token. They run through each layer in one pass, on top of the caches, and each new token then runs at its
+# position, until a stop token, the count, or the end of the room (cap positions: Chat.start's). The draws of a Pick
+# count from the answer's first token, so an answer is the tokens that `tokens` gives for the whole conversation up
+# to it.
+def turn(+c: M.Cfg, +pk: Pick, +cap: Nat, ch: Chat<c, cap>, m: M.Model<c>, +ids: List<&2, Nat>, n: Nat) -> Turn<c, cap>:
+  match ch:
+    case Chat{+t, +pend, cs}:
+      turn.room(c, pk, cap, t, fit(t, cap), n, pend, feed(pend, ids), m, cs)
