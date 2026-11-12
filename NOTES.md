@@ -1584,3 +1584,32 @@ with 16 threads 12% and 10% slower and the runtime's default of 22 slower still.
   each time), `make check`, the laws with `--verdict`, and `reference/test_gen.py` on the 360M and on the 1.7B on 2,
   4 and 8 threads (0 failures). The emitted C keeps `par_att`'s two joins. Raw rows:
   [`bench/2026-11-12-band-depth/`](bench/2026-11-12-band-depth/).
+
+## The instruct checkpoints (2026-11-12)
+
+`reference/models.py` now names SmolLM2-135M-Instruct, SmolLM2-360M-Instruct and SmolLM2-1.7B-Instruct as models
+(`MODEL=smollm2-135m-instruct` and so on), at the revisions `INSTRUCT` pinned on 2026-11-01 for the chat template.
+Nothing under `llama/` or `demo/` changes: the three have their base models' architectures (the same `cfg.txt` line)
+and the same `tokenizer.json` (sha256 9ca9acdd...), with other weights, so `--chat` now has models trained to answer.
+
+- **`make check` with each of the three**: 0 failures in every test, as on the base models. The logits are within
+  4.0e-6, 1.4e-5 and 6.2e-5 of the largest logit on the 11 prompts, with the same argmax at the 88 positions, and the
+  twelve greedy prompts give `transformers`' tokens and text.
+- **One chat turn against transformers**, new: `reference/chat_gen_ref.py` writes, for twelve messages, the ids of
+  `apply_chat_template` (one user turn, the template's default system message, the assistant's turn opened) and what
+  `generate` answers in up to 32 greedy tokens, stopping after `<|im_end|>` (id 2) or the end-of-text token (id 0);
+  `reference/test_chat_gen.py` compares `gen --chat` with it: the prompt ids, the generated ids and the text
+  identical, the chosen logits within 1.4e-6, 2.6e-6 and 1.4e-6 on the three instruct checkpoints. It is in `make
+  check`, so the base models run it too, where the answer is the template's text continued (the base 135M: 0
+  failures).
+- **An instruct checkpoint's `config.json` names `<|im_end|>` as its end token**, and `gen` stops a plain prompt after
+  id 0 only, so `gen_ref.py` now names id 0 in `generate`. The base models' references do not move (the 135M's
+  `gen.json` is byte for byte what it was).
+- What the answers look like: to "What is the capital of France?", the 135M-Instruct and the 360M-Instruct say "The
+  capital of France is Paris."; to "What is 2 + 2?" the 360M-Instruct says "2 + 2 = 4." and the 135M-Instruct starts
+  an essay; asked for a haiku about the sea the 360M-Instruct writes "The waves below, / A gentle lullaby, / The sea's
+  eternal song."; and only the 1.7B-Instruct translates "good morning" to Portuguese ("'Good morning' translates to
+  'Bom dia' in Portuguese."). A chat turn on the 1.7B-Instruct took 13 to 25 s here, on a machine busy with other
+  tests, so that is no measurement; most of it is the 33 to 52 prompt tokens, which run one position at a time.
+- Left for the chat: several turns and a system message of one's own on `gen`'s command line (the template in Bend
+  already takes them), and keeping the key/value cache between turns.
