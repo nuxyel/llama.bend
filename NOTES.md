@@ -1474,3 +1474,113 @@ An unattended night on the idle machine (started after five quiet minutes: load 
   probe on 1.00 and 7.41 cores); `make bits` on 16 threads and on one (23 outputs identical to the saved bits);
   `reference/test_gen.py` on the 360M and on the 1.7B (12 prompts and the two malformed tables each, 0 failures); the
   emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
+
+## Generation without the activations on one band (2026-11-12)
+
+`forward_gen` left every layer's activations empty only when the model was in more than one band. On one band it kept
+them, a choice of 2026-10-16 on Bend 2.0.37, when leaving them out had measured 4 to 11% slower on one thread. It now
+leaves them empty always (`forward.go(False{}, ..)`): generation never reads them. The ids and the logit bits do not
+move: `make check`, `make bits` on 16 threads and on one (23 outputs identical), and `reference/test_gen.py` on the
+360M and on the 1.7B, on one thread and on the default count (0 failures).
+
+- **On the idle machine** (an unattended night started after five quiet minutes, mains power, `performance`; Bend
+  2.0.40, `bc50732` against `a76390e`; one thread pinned to a performance core, alternated shuffled rounds; ms per
+  token by the program's own clock as median and range, and the whole run's user-mode instructions):
+
+  | model, tokens | rounds | kept | left empty | time | instructions |
+  |---|---|---|---|---|---|
+  | 135M, 48 | 7 | 78.4 (76.1-80.5) | 75.6 (72.4-76.7) | -3.6% | -2.3% |
+  | 360M, 32 | 7 | 190.9 (190.0-192.4) | 191.7 (189.5-193.8) | +0.4% | -1.5% |
+  | 1.7B, 16 | 5 | 923.8 (919.3-940.3) | 889.3 (884.0-903.7) | -3.7% | -0.6% |
+
+  The 135M is faster in each of its 7 rounds, with the two ranges touching; the 360M is the same; the 1.7B's ranges
+  are apart. On 16 threads, where both programs run the same code, nothing moves (55.6 and 55.6, 99.2 and 98.9, 274.9
+  and 283.2 ms, every pair of ranges overlapping). Over 128 tokens of the 1.7B the benchmark's harness gives 940
+  against 869 ms (-7.6%): by the program's own clock a token with the activations kept grows 0.43 ms per cached
+  position, and 0.14 with them empty.
+- **It is not where clang put the loops.** Both programs rebuilt from their emitted C with `-falign-loops=64` give the
+  same gaps (135M -2.5%, 360M +1.0%). That was the cause the 2026-10-16 entry found on 2.0.37.
+- **Why the gain is smaller than the work removed.** In two flat profiles of the 135M the work outside the product
+  falls from 4,247 M to 2,468 M cycles (`term_drop` from 1,303 M to 410 M), and the product, the same instructions in
+  both, rises from 14,978 M to 15,772 M.
+- **The gain depends on what else the machine is doing.** A second idle round the same night ran the two programs
+  in alternated blocks with the screen still and with it changing every frame (a desktop notification replaced about
+  30 times a second, nothing else running), one thread, three blocks of each:
+
+  | model, tokens | screen | kept | left empty | |
+  |---|---|---|---|---|
+  | 135M, 48 | still | 77.7 (76.1-78.5) | 75.0 (74.2-76.2) | -3.5% |
+  | 135M, 48 | changing | 79.2 (78.5-79.4) | 66.9 (66.9-66.9) | -15.5% |
+  | 360M, 32 | still | 189.3 (186.8-191.8) | 191.3 (184.7-192.3) | +1.0% |
+  | 360M, 32 | changing | 193.8 (193.4-194.6) | 175.5 (175.4-176.9) | -9.5% |
+  | 1.7B, 16 | still | 912.3 (911.7-924.6) | 879.3 (860.5-893.2) | -3.6% |
+  | 1.7B, 16 | changing | 879.0 (878.5-879.3) | 782.8 (781.2-784.4) | -10.9% |
+
+  The core runs at the same frequency in both states. With the screen changing, a read that misses the L2 waits less:
+  on the 135M the product costs 13.1 G cycles in one program and 13.2 G in the other, instead of 15.0 and 15.8. The
+  program that keeps the activations loses that outside the product: it writes each new list into memory it has not
+  touched for a whole token and `term_drop` walks them all at the end, and once other cores use the shared cache
+  those reads go to memory (its cycles stalled on an L3 miss go from 0.5 G to 2.2 G; the other program's stay at 0.3
+  to 0.5 G). I did not find what in the processor makes the difference; a process that only wakes 60 times a second,
+  a ping or a file being written do not. A diagnosis I took on 2026-11-11 while working on the machine had said 8 to
+  15% on the three models: it was the second state, and I had read it as the result.
+- `BENCHMARK.md` and the README keep the idle protocol's numbers, which are the still screen's. Raw rows:
+  [`bench/2026-11-12-activations/`](bench/2026-11-12-activations/).
+
+## The band depth follows the thread count and the model's width (2026-11-12)
+
+The model was cut into bands only above two threads: `depth_for` gave one band up to two threads and 16 above. The
+first idle round of the night took the thread curve of `a76390e` (ms per token, medians of 5 rounds, 3 for the 1.7B,
+and the cores the run used):
+
+| threads | 1 | 2 | 4 | 8 | 12 | 16 | 22 |
+|---|---|---|---|---|---|---|---|
+| 135M, 40 tokens | 76.2 | 76.2 | 50.8 | 48.7 | 54.0 | 54.8 | 58.9 |
+| 360M, 40 tokens | 192.1 | 193.8 | 100.1 | 92.7 | 97.2 | 102.1 | 108.5 |
+| 1.7B, 16 tokens | 882.9 | 875.3 | 334.4 | 306.4 | 273.5 | 284.5 | 267.5 |
+| cores used, 135M | 1.00 | 1.00 | 2.58 | 4.07 | 5.56 | 7.25 | 9.41 |
+
+Two threads ran on one core: the second had no band to take. And the 135M and the 360M were fastest on 8 threads,
+with 16 threads 12% and 10% slower and the runtime's default of 22 slower still.
+
+- **A sweep of threads against a fixed depth** (builds with the depth forced to 1 to 5; a diagnosis, taken while I
+  was working on the machine, one or two runs a cell; [`bench/2026-11-12-band-depth/sweep.tsv`](bench/2026-11-12-band-depth/sweep.tsv))
+  put the best depth of the two narrow models at as many bands as threads on 2, 4 and 8 threads and at 8 bands on 3
+  and 6, with 16 bands best from 12 threads on. The 1.7B wants two bands on two threads and 16 or more from three on:
+  with as many bands as threads it lost 18% on three threads and 11% on six (449 against 381 ms, 320 against 287). Its
+  bands are large next to a fork, and more bands than threads let the threads even out on this processor, whose
+  cores are not all the same.
+- **The rule**, `depth_in(c, threads)`, which the loaders call: one thread, one band; two threads, two bands; from
+  three threads on, 16 bands for a model at least 1024 wide, and for a narrower one 4 bands on four threads, 8 on
+  three and on five to eight, 16 beyond. `depth_for(threads)` keeps its signature and is the narrow model's rule. The
+  embedding still gets one level more than the layers.
+- **Measured by the protocol** in the night's second idle round, `a76390e` against `336819b`, medians of 5 alternated
+  rounds (3 for the 1.7B), ms per token, old → new:
+
+  | threads | 135M, 40 tokens | 360M, 32 tokens | 1.7B, 16 tokens |
+  |---|---|---|---|
+  | 1 | 76.3 → 76.5 | 193.7 → 192.5 | 905.3 → 889.0 |
+  | 2 | 76.3 → 52.2 (-31.6%) | 193.8 → 112.8 (-41.8%) | 896.9 → 457.8 (-49.0%) |
+  | 3 | 55.2 → 51.2 (-7.3%) | 106.8 → 105.9 (-0.8%) | 379.9 → 377.8 |
+  | 4 | 50.8 → 46.2 (-9.1%) | 99.5 → 89.5 (-10.0%) | 333.7 → 334.3 |
+  | 6 | 49.8 → 47.6 (-4.4%) | 94.0 → 95.1 (+1.1%) | 286.0 → 289.5 |
+  | 8 | 49.1 → 45.7 (-6.9%) | 92.1 → 90.6 (-1.6%) | 308.0 → 306.5 |
+  | 12 | 53.2 → 53.4 | 96.2 → 95.7 | 264.6 → 267.6 |
+  | 16 | 54.9 → 54.6 | 100.1 → 99.6 | 281.1 → 282.3 |
+  | 22 | 58.6 → 57.4 | 105.4 → 105.2 | 271.3 → 270.3 |
+
+  The rows with a percentage are the ones whose depth changed; their ranges are apart, except the 360M on 6 threads,
+  whose two ranges overlap. Two threads now use 1.62 to 1.67 cores. Where the depth is the same the two programs
+  agree within 1.2% with overlapping ranges (2.1% for the 135M on 22 threads), except the 1.7B on one thread, 1.8%
+  apart over 3 rounds with the same instructions in both: that is the spread of this measurement on the 1.7B, not a
+  gain.
+- **The fastest count** is now 8 threads for the 135M (45.7 ms; 46.2 on 4), 16% under its 16 threads and 20% under
+  the 22 the runtime takes when nothing is asked; 4 threads for the 360M (89.5; 90.6 on 8), 10% and 15% under; 12 or
+  22 for the 1.7B. The README says how to ask for a count.
+- **Not taken**: the 1.7B on 8 threads was 6% faster with 32 bands in the sweep (277 against 296 ms, twice) and 2%
+  faster with 4 bands on four threads (once), but 32 bands lose on 12 and 16 threads, and I have no rule to state for
+  it.
+- **The bits are the same at every depth**: `make bits` on 1, 2, 3, 4, 8, 16 and 22 threads (23 outputs identical
+  each time), `make check`, the laws with `--verdict`, and `reference/test_gen.py` on the 360M and on the 1.7B on 2,
+  4 and 8 threads (0 failures). The emitted C keeps `par_att`'s two joins. Raw rows:
+  [`bench/2026-11-12-band-depth/`](bench/2026-11-12-band-depth/).
