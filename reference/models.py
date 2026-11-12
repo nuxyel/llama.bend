@@ -10,16 +10,17 @@ MODELS = {
     "smollm2-135m": ("HuggingFaceTB/SmolLM2-135M", "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"),  # checked 2026-10-09
     "smollm2-360m": ("HuggingFaceTB/SmolLM2-360M", "f8027fd0eaeea54caa13c31d31b9fdc459c38b49"),  # checked 2026-10-10
     "smollm2-1.7b": ("HuggingFaceTB/SmolLM2-1.7B", "effd688a12921b4cc83e3312b6feb579f70f9c71"),  # checked 2026-10-10
+    # the instruct checkpoints: the same three architectures and the same tokenizer.json (sha256 9ca9acdd...), with
+    # weights trained to answer in the chat template below (revisions checked 2026-11-01, run here since 2026-11-12)
+    "smollm2-135m-instruct": ("HuggingFaceTB/SmolLM2-135M-Instruct", "12fd25f77366fa6b3b4b768ec3050bf629380bac"),
+    "smollm2-360m-instruct": ("HuggingFaceTB/SmolLM2-360M-Instruct", "a10cc1512eabd3dde888204e902eca88bddb4951"),
+    "smollm2-1.7b-instruct": ("HuggingFaceTB/SmolLM2-1.7B-Instruct", "31b70e2e869a7173562077fd711b654946d38674"),
 }
 
-# SmolLM2-Instruct's chat template, from tokenizer_config.json at these revisions (checked 2026-11-01; the same text in
-# the three). Their tokenizer.json is the base models' file byte for byte (sha256 9ca9acdd...), so the template is
-# applied with the base tokenizer in data/<MODEL>/hf and the instruct checkpoints are not downloaded.
-INSTRUCT = {
-    "smollm2-135m": ("HuggingFaceTB/SmolLM2-135M-Instruct", "12fd25f77366fa6b3b4b768ec3050bf629380bac"),
-    "smollm2-360m": ("HuggingFaceTB/SmolLM2-360M-Instruct", "a10cc1512eabd3dde888204e902eca88bddb4951"),
-    "smollm2-1.7b": ("HuggingFaceTB/SmolLM2-1.7B-Instruct", "31b70e2e869a7173562077fd711b654946d38674"),
-}
+# each base model's instruct checkpoint. SmolLM2-Instruct's chat template is in tokenizer_config.json at these
+# revisions (checked 2026-11-01; the same text in the three), which prep.py does not download: the template below is
+# applied with the tokenizer.json in data/<MODEL>/hf, base or instruct (test_chat.py --hub compares it with the Hub's)
+INSTRUCT = {m: MODELS[m + "-instruct"] for m in ("smollm2-135m", "smollm2-360m", "smollm2-1.7b")}
 CHAT_TEMPLATE = (
     "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}"
     "{{ '<|im_start|>system\nYou are a helpful AI assistant named SmolLM, trained by Hugging Face<|im_end|>\n' }}"
