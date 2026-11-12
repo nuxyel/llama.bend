@@ -12,13 +12,20 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
 - `NOTES.md`: every finding, measurement and decision, by date. Read it before changing anything.
 - `llama/main.bend`: the typed package (future `bend-ml-llama`): `Cfg`, `LW<c>`, `Model<c>`, `KV<cap, t>`, `block`,
   `forward`, the loader (plain Bend, BF16 from `hf/model.safetensors` at `w/st.txt`'s offsets) and every law; `llama/README.md` explains the laws. `make laws` runs bend and `--verdict`.
+- `llama/tok.bend`, `llama/unicode.bend`, `llama/gen.bend`: the rest of the package (since 2026-11-12, not on BendHub
+  yet): SmolLM2's tokenizer and chat template (`Tables`, `load`, `encode`, `decode`, `chat`), its character classes, and
+  the generation loop (`Pick`, `tokens`, `generate`); `llama/README.md` lists their API. `llama/package.bend` is the
+  entry to publish: it imports every file of the package, because `--publish` sends the entry and what it imports.
+  `make laws` runs bend and `--verdict` on each of the five (the Makefile's `PKG`).
 - `llama/load.bend`: the loader the demos use, the same model read from `hf/model.safetensors` (BF16, at `w/st.txt`'s
-  offsets) with `bend-ml-binary-read` (foreign code, C and JS). Never import it, or binary-read, from `main.bend`: `--verdict` would fail (`make laws` checks it).
+  offsets) with `bend-ml-binary-read` (foreign code, C and JS). Never import it, or binary-read, from a file of the
+  package: `--verdict` would fail (`make laws` checks it).
 - `llama/gpu.bend`: generation with the products on the GPU through bend-ml-tensor-gpu (`bend-ml-tensor-gpu@0.1.5.2` from BendHub; it
   uses Base's unsafe `Array.fork`). `demo/gen_gpu.bend` runs it, `make
-  bench-gpu` checks its tokens. Never import it, or tensor-gpu, from `main.bend` or `load.bend` (`make laws` checks it).
-- `demo/`: programs on the package (`forward.bend`, `gen.bend`, `layer_test.bend`, which take the model
-  directory as their first argument) and the SmolLM2 tokenizer (`tok.bend`, `unicode.bend`).
+  bench-gpu` checks its tokens. Never import it, or tensor-gpu, from a file of the package or `load.bend` (`make laws` checks it).
+- `demo/`: programs on the package: `forward.bend`, `gen.bend`, `layer_test.bend` and `hello.bend`, which take the
+  model directory as their first argument (`hello.bend` imports the package's files only, and `make check` compares
+  its tokens with transformers'), and `tok.bend`, the tokenizer's command line for the tests.
 - `reference/`: the Python side: `models.py` (the pinned models; `MODEL=` picks one), `prep.py` (download,
   `w/st.txt`, `cfg.txt`, tokenizer tables, `--check`; `F32=1` also writes the F32 copies `w/<name>.bin` that only
   `bend-ml-llama@0.2.0.0` reads), the `transformers` oracles (`*_ref.py`), the tests
