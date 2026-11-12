@@ -86,4 +86,63 @@ An `Array` has a single owner, so every product hands its matrix back (`block` r
 `Model`). `Act` holds every intermediate of a layer (`n1`, `q`, `k`, `v`, `qr`, `kr`, `attn`, `a`, `n2`, `m`,
 `y`). The tests compare them with `transformers`, and a backward pass would read them.
 
+## The tokenizer and generation
+
+Since 2026-11-12 the package holds what a program needs to go from a prompt to tokens, in files of their own beside
+`main.bend`. They are in the repository and not on BendHub yet: `bend-ml-llama@0.2.1.1` is `main.bend` alone.
+
+| File | What |
+|---|---|
+| `tok.bend` | SmolLM2's tokenizer: the pre-tokenizer, the merges (through `bend-ml-bpe-tokenizer@0.1.3.0`), decoding, and SmolLM2-Instruct's chat template |
+| `unicode.bend` | the character classes `tok.bend` reads |
+| `gen.bend` | the generation loop over `main.bend`'s forward pass: greedy or sampled, one token at a time or all at once |
+| `package.bend` | the entry to publish: `--publish` sends a file and what it imports, so this one imports the four above; a program imports the files it uses |
+
+```python
+import Base
+import ./llama/main.bend as M
+import ./llama/tok.bend as K
+import ./llama/gen.bend as G
+
+# n greedy tokens after a prompt, one id per line (dir: a model directory prepared by llama.bend's reference/prep.py)
+def run(+dir: String, prompt: String, n: Nat) -> IO(Unit):
+  do IO<Unit>:
+    tb : K.Tables <- K.load(dir)
+    +c : M.Cfg <- M.read_cfg(dir)
+    model : M.Model<c> <- M.load_model(c, dir)
+    g : G.Gen<c> = G.generate(c, model, G.Greedy{}, False{}, K.encode(tb, prompt), n)
+    List.for_each(~&2, ~Nat, ~(id => IO.print(Nat.show(id))), G.ids_of(G.Gen.toks(c, g)))
+```
+
+llama.bend's `demo/hello.bend` is this program with a command line, and `make check` compares its 128 tokens with
+`transformers`'.
+
+`tok.bend`:
+
+| Name | What |
+|---|---|
+| `Tables`, `load(dir)`, `read_tables(merges, perm)` | the merge rules and the byte permutation of a model, built once for encoding and decoding: from a model directory (a malformed merges table stops the program), or from the two files `prep.py` writes, `merges_num.txt` and `perm.txt` (`None` for a malformed table) |
+| `encode(tb, text)` | the ids of a text |
+| `decode(tb, ids)` | the text of ids: special tokens left out, bytes that are not valid UTF-8 as U+FFFD |
+| `chat(tb, ms, gen)` | the ids of a conversation in SmolLM2-Instruct's chat template; `ms` is role, content, role, content, ...; `gen` ends with `<|im_start|>assistant`, which asks for the answer |
+| `encode_text(rules, perm, bytes)`, `decode_text(rules, perm, ids)`, `chat_ids(rules, perm, ms, gen)` | the same three on UTF-8 bytes and on the two fields of `Tables` |
+| `utf8_of(chars)` | the characters of a `String` as UTF-8 bytes |
+| `pretok`, `tag_all`, `ids_ok`, `nums`, `rules.go` | the pre-tokenizer, the check of a merges table, and the parsing of the two files |
+
+`gen.bend`:
+
+| Name | What |
+|---|---|
+| `Pick`: `Greedy{}`, `Draw{temp, k, p, seed}` | how a token is chosen: the argmax, or `main.bend`'s `sample` with draw `j` of the seed for the `j`-th new token |
+| `choose(pk, lg, j) -> Chosen` | the `j`-th new token from the logits `lg`: its id and logit (`Chosen.am`) and, for a draw, the top-k candidates it came from (`Chosen.cs`) |
+| `generate(c, m, pk, chat, ids, n) -> Gen<c>` | `n` new tokens after the prompt `ids`; fewer after the end-of-text token (id 0) and, when `chat` is set, after `<|im_end|>` (id 2). `Gen{toks, m}`: the tokens (the id and logit of each) and the model handed back |
+| `Gen.then`, `Gen.toks`, `ids_of` | continue with the tokens and the model; the tokens alone; their ids |
+| `tokens(c, m, pk, chat, ids, n) -> Toks<c>` | the same loop one token at a time. `Tok{am, cs, m, rest}` is a new token, the candidates of a draw, the model, and the rest of the generation, which runs when it is given the model back (`rest(m)`); `End{m}` is the end. A program that shows each token as it comes walks this value, as llama.bend's `demo/gen.bend` does |
+| `take(n, c, s) -> Gen<c>` | the first `n` tokens of a `Toks`, with no forward pass after the `n`-th |
+| `left_after`, `left_chat` | the stop rule: the tokens left to generate after a token |
+
+`gen.bend` takes the model as a parameter, so a program chooses its loader (`main.bend`'s `load_model`, or
+`load.bend`'s), and neither file prints or reads a clock. They hold no law of their own yet; `bend <file> --verdict`
+accepts each (`ALL PROOFS CHECK`: every def checked by the kernel, no `@unsafe`, no foreign code).
+
 MIT · Renan Vinícius (@nuxyel)
