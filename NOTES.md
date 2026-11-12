@@ -1776,3 +1776,59 @@ positions through each layer together.
   faster than its steady state, by about a quarter on the 135M; I take it for the processor's power budget and did
   not check. The 32-token rows of `BENCHMARK.md`'s tables are inside that window, for every system alike.
 - Raw rows: [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/).
+
+## A conversation that keeps its caches (2026-11-12)
+
+`gen --chat` answered one user turn, and a second turn would have meant running the whole conversation again. Now
+the caches stay between the turns.
+
+- **In the package.** `llama/gen.bend` has `Chat<c, cap>`, a conversation between two answers (the positions in the
+  caches and the last answer's last token, when it has not run yet), and `turn`, which gives the next answer one
+  token at a time as `tokens` does. The turn's ids go through `prompt.bend`'s pass at the positions after the ones
+  already there, the last position's logits choose the first token, and the loop goes on from it; `Over` hands the
+  conversation back with why the answer ended. `llama/tok.bend` has `chat_next`, the ids that follow an answer in
+  the template: `<|im_end|>`, a newline, the user's turn and the assistant's opening.
+- **The room.** The caches have room for `cap` positions, fixed when the conversation starts. `fit` counts a
+  turn's k ids against the positions left and returns the rest with the equation k + rest = room, or `Short`. From
+  that equation and the conversation's own t + room = cap, `room_inv` and `room_le` give the two proofs
+  `forward_prompt` asks for. A turn that does not fit has no proof to offer, so it cannot be written into the
+  caches: it answers `Unfit` and the conversation comes back as it was. When the room ends inside an answer, the
+  answer stops there (`Full`). The conversation does not carry its t + room = cap between the turns, because an
+  erased proof cannot be a field of a value: each turn counts t against cap again (`fit(t, cap)`), and that is the
+  equation it runs on. No new law: these are lemmas, and `kv_room` still says why a push inside the room does not
+  wrap. `bend --verdict` accepts the file.
+- **What a conversation keeps is ids.** When an answer ends, its last token has not gone through the model (the
+  loop stops before it). The next turn runs it first, unless it is a stop token: an `<|im_end|>` is then the
+  template's own, and an end-of-text token is left out, as `transformers` leaves it out of the answer's text. A
+  draw's index counts from the answer's first token. So an answer is, bit for bit, what `tokens` gives for the ids of
+  the whole conversation up to it, greedy or sampled.
+- **Against `transformers`.** `reference/chat_turns_ref.py` generates three conversations of three turns, every
+  turn from the whole conversation in ids, and records for each turn whether those ids are `apply_chat_template`'s
+  for the messages and the answers' texts. They are in the 27 turns of the three instruct checkpoints. On the 135M
+  base they are in 8 of 9: a base model continues the template's text, and one of its continuations does not encode
+  back to its ids. `reference/test_chat_turns.py` (new, in `make check`) runs the conversations on one thread and on
+  16: at every turn the ids the program has run are the reference's conversation, the answer's ids and text are
+  identical, and the chosen logits are within 1.3e-6 on the 135M-Instruct, 1.4e-6 on the 360M-Instruct and
+  1.4e-6 on the 1.7B-Instruct, and the two thread counts print the same logit bits. In the same binary, every
+  turn again as one prompt of the whole conversation, run from nothing, gives those ids and logit bits too; so does
+  a sampled conversation (temperature 1.5, which leaves the greedy answers) against one prompt with the same seed.
+- **The room, tested.** With room for the first turn and three positions more, the first answer is cut after four
+  tokens, the same four, the program says the caches are full, and the next turns answer `unfit` with the positions
+  they would need. With room for eight positions no turn runs, and each one is offered again as the conversation's
+  first.
+- **`demo/gen.bend --chat -`** reads a turn a line from the standard input and writes the answer's text as its
+  tokens come; a piece that ends in an unfinished UTF-8 sequence waits for the token that completes it. What
+  `IO.write` writes reaches a terminal only when the runtime next waits, so each piece is followed by
+  `IO.sleep(0)`. `GEN_TRACE=1` prints the lines the tests read, `GEN_CTX` sets the room (2048 positions by default)
+  and `GEN_IDS=1` reads a prompt as ids, which is how the tests run a whole conversation as one prompt.
+- **Time**, a diagnosis on a busy machine and not a result yet: in the first conversation the second turn's first
+  token comes after 0.39 s on the 135M-Instruct on one thread, against 1.18 s for the conversation as one prompt,
+  and the third turn's after 0.49 s against 1.69 s; on the 1.7B-Instruct on 16 threads, 1.97 s against 5.29 s and
+  2.49 s against 7.90 s. About three times sooner, with a quarter of the ids to run.
+- **Checks** on a busy machine: `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures each, the
+  laws with `--verdict` on the package's six files among them), `make bits` on 22 threads and on one (23 outputs
+  identical), `test_chat_turns.py` on the 360M-Instruct and on the 1.7B-Instruct, bend-lint with 0 findings.
+- **Not done.** Nothing is dropped from a conversation's start to make room: it ends when the caches are full. A
+  system message of one's own is not in `gen`. The package has no call that returns a whole answer at once, as
+  `generate` does for a prompt: a caller walks `Turn`, as `demo/gen.bend`'s `say` does.
+
