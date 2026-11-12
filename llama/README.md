@@ -96,7 +96,7 @@ Since 2026-11-12 the package holds what a program needs to go from a prompt to t
 | `tok.bend` | SmolLM2's tokenizer: the pre-tokenizer, the merges (through `bend-ml-bpe-tokenizer@0.1.3.0`), decoding, and SmolLM2-Instruct's chat template |
 | `unicode.bend` | the character classes `tok.bend` reads |
 | `prompt.bend` | the prompt in one pass: its positions through each layer together, each weight matrix read once for all of them, with the bits of the position-by-position path |
-| `gen.bend` | the generation loop over `main.bend`'s forward pass and `prompt.bend`'s: greedy or sampled, one token at a time or all at once |
+| `gen.bend` | the generation loop over `main.bend`'s forward pass and `prompt.bend`'s: greedy or sampled, one token at a time or all at once; and a conversation that keeps its caches between the turns |
 | `package.bend` | the entry to publish: `--publish` sends a file and what it imports, so this one imports the five above; a program imports the files it uses |
 
 ```python
@@ -126,6 +126,7 @@ llama.bend's `demo/hello.bend` is this program with a command line, and `make ch
 | `encode(tb, text)` | the ids of a text |
 | `decode(tb, ids)` | the text of ids: special tokens left out, bytes that are not valid UTF-8 as U+FFFD |
 | `chat(tb, ms, gen)` | the ids of a conversation in SmolLM2-Instruct's chat template; `ms` is role, content, role, content, ...; `gen` ends with `<|im_start|>assistant`, which asks for the answer |
+| `chat_next(tb, msg)` | the ids that continue a conversation after an answer: `<|im_end|>` and a newline close the assistant's turn, `msg` is the user's next turn, and `<|im_start|>assistant` asks for the next answer |
 | `encode_text(rules, perm, bytes)`, `decode_text(rules, perm, ids)`, `chat_ids(rules, perm, ms, gen)` | the same three on UTF-8 bytes and on the two fields of `Tables` |
 | `utf8_of(chars)` | the characters of a `String` as UTF-8 bytes |
 | `pretok`, `tag_all`, `ids_ok`, `nums`, `rules.go` | the pre-tokenizer, the check of a merges table, and the parsing of the two files |
@@ -142,6 +143,11 @@ llama.bend's `demo/hello.bend` is this program with a command line, and `make ch
 | `tokens.seq(c, m, pk, chat, ids, n) -> Toks<c>` | `tokens` with the prompt position by position (`main.bend`'s `forward_pre`), the path `tokens` itself takes for a prompt of one id; the same tokens and logit bits |
 | `take(n, c, s) -> Gen<c>` | the first `n` tokens of a `Toks`, with no forward pass after the `n`-th |
 | `left_after`, `left_chat` | the stop rule: the tokens left to generate after a token |
+| `Chat<c, cap>`, `Chat.start(c, cap)` | a conversation between two answers: the caches of the positions it has run (one per layer, with room for `cap`), and the last answer's last token when it has not gone through the model yet. `Chat.start` has no turn and empty caches |
+| `turn(c, pk, cap, chat, m, ids, n) -> Turn<c, cap>` | the conversation's next answer, `n` tokens at most, one at a time. `ids` continue the conversation: `tok.bend`'s `chat` for the first turn, `chat_next` after an answer. They go through each layer in one pass (`prompt.bend`) on top of the caches, so a turn never runs the conversation before it again; then each new token runs at its position, until `<|im_end|>` (id 2), the end-of-text token (id 0), the count, or the end of the room. A `Draw` counts its draws from the answer's first token, so an answer is the tokens that `tokens` gives for the whole conversation up to it |
+| `Turn`: `Said{am, cs, m, rest}`, `Over{why, m, room, chat}` | an answer as `Toks` hands tokens over: `Said` is a new token and the rest of the answer (`rest(m)`); `Over` is its end, with the positions the caches still have room for and the conversation for the next turn |
+| `Why`: `Stop{}`, `Count{}`, `Full{}`, `Unfit{need}`, `Idle{}` | why an answer ended: a stop token; the count; the caches are full; and two cases in which nothing ran and the conversation comes back as it was: the turn's `need` ids are more than the room, or the turn had no id or asked for no token |
+| `Fit<k, room>`, `fit(k, room)`, `room_inv`, `room_le` | how a turn gets its proof of room: `fit` counts the turn's `k` ids against the positions left and answers `Short{}`, or `Fits{rest, e}` with the equation `k + rest = room`; with the conversation's `t + room = cap`, `room_inv` gives `(t + k) + rest = cap` and `room_le` gives `t + k <= cap`, which is what `forward_prompt` asks for. A turn that does not fit cannot be written into the caches: there is no proof to pass |
 
 `prompt.bend`:
 
