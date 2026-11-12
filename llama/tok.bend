@@ -744,3 +744,13 @@ def chat(tb: Tables, ms: List<&2, String>, +gen: Bool) -> List<&2, Nat>:
   match tb:
     case Tables{+rules, +perm}:
       chat_ids(rules, perm, utf8s(ms), gen)
+
+# the ids that continue a conversation after an answer: <|im_end|> and a newline close the assistant's turn, msg is
+# the user's next turn, and <|im_start|>assistant\n asks for the next answer. After the conversation's ids and the
+# answer's (without its <|im_end|>, when it has one), they give chat's ids for the conversation one turn longer, as
+# long as the answer's text encodes back to its ids
+def chat_next(tb: Tables, msg: String) -> List<&2, Nat>:
+  match tb:
+    case Tables{+rules, +perm}:
+      2n <> List.append(&2, Nat, encode_text(rules, perm, 10 <> Nil{}), chat_turns(rules, perm, [bytes_of(String.to_list("user")), utf8_of(String.to_list(msg))], True{}))
+
