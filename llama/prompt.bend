@@ -169,7 +169,14 @@ def ap_then(-R: Type, -cap: Nat, -t: Nat, ap: AP<cap, t>, k: M.KV<cap, t> -> Arr
 # values pushed into the cache, attention over positions 0..t, the output written to at's row i. qo, ko and vo are
 # the three products' results; left positions remain, the cache holds t of them, and t + left = tT <= cap (e, le),
 # which gives each push its proof of room (step_room, leb_trans) and the cache its final index (end_eq).
-def atts(left: Nat, +c: M.Cfg, +d: Nat, -cap: Nat, +t: Nat, -tT: Nat, -e: {Nat.add(t, left) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, +i: U32, +nu: U32, qo: List<&1, Leaf>, ko: List<&1, Leaf>, vo: List<&1, Leaf>, kv: M.KV<cap, t>, at: Array<F32>) -> AP<cap, tT>:
+#
+# The key/value heads of a position run one after another here (attention's depth 0), whatever the model's depth:
+# both orders compute every head the same way, so the bits are the same. In parallel, each position forks a few
+# microseconds of work in the middle of a stretch that runs on one thread, and the runtime wakes every other thread
+# for it: on 16 threads the 135M's 56 positions took 2.2 s of system time and 90,000 voluntary context switches with
+# the heads in parallel, 0.4 s and 21,000 with them in sequence, and the pass was slower than on 4 threads (NOTES,
+# 2026-11-12).
+def atts(left: Nat, +c: M.Cfg, -cap: Nat, +t: Nat, -tT: Nat, -e: {Nat.add(t, left) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, +i: U32, +nu: U32, qo: List<&1, Leaf>, ko: List<&1, Leaf>, vo: List<&1, Leaf>, kv: M.KV<cap, t>, at: Array<F32>) -> AP<cap, tT>:
   match left:
     case 0n:
       AP{kv_cast(cap, t, tT, end_eq(t, tT, e), kv), at}
@@ -178,8 +185,8 @@ def atts(left: Nat, +c: M.Cfg, +d: Nat, -cap: Nat, +t: Nat, -tT: Nat, -e: {Nat.a
         ro_then(AP<cap, tT>, vec(ko, i, nu), ko2 => k =>
           ro_then(AP<cap, tT>, vec(vo, i, nu), vo2 => v =>
             +rt = M.rot_at(c, t)
-            M.KA.then(AP<cap, tT>, cap, 1n+t, M.attention(c, d, cap, t, M.ropes(rt, M.heads(M.Cfg.heads(c), M.Cfg.half(c), q)), M.KV.push(c, cap, t, kv, M.leb_trans(1n+t, tT, cap, M.step_room(t, p, tT, e), le), M.joins(M.ropes(rt, M.heads(M.Cfg.kv(c), M.Cfg.half(c), k))), M.chunks(M.Cfg.kv(c), M.Cfg.head(c), v))), kv2 => a =>
-              atts(p, c, d, cap, 1n+t, tT, M.step_inv(t, p, tT, e), le, (i + 1 : U32), nu, qo2, ko2, vo2, kv2, TA.fill_list(a, (i * U32.from_nat(M.Cfg.dim(c)) : U32), at))))))
+            M.KA.then(AP<cap, tT>, cap, 1n+t, M.attention(c, 0n, cap, t, M.ropes(rt, M.heads(M.Cfg.heads(c), M.Cfg.half(c), q)), M.KV.push(c, cap, t, kv, M.leb_trans(1n+t, tT, cap, M.step_room(t, p, tT, e), le), M.joins(M.ropes(rt, M.heads(M.Cfg.kv(c), M.Cfg.half(c), k))), M.chunks(M.Cfg.kv(c), M.Cfg.head(c), v))), kv2 => a =>
+              atts(p, c, cap, 1n+t, tT, M.step_inv(t, p, tT, e), le, (i + 1 : U32), nu, qo2, ko2, vo2, kv2, TA.fill_list(a, (i * U32.from_nat(M.Cfg.dim(c)) : U32), at))))))
 
 # x's row i becomes x + a (a: the output projection's results, position i), and nrm's row i its rmsnorm
 def res_norm(left: Nat, +c: M.Cfg, +g: List<&2, F32>, +w: Nat, +i: U32, +nu: U32, ao: List<&1, Leaf>, x: Array<F32>, nrm: Array<F32>) -> TA.P2:
@@ -223,7 +230,7 @@ def bp_then(-R: Type, -c: M.Cfg, -cap: Nat, -t: Nat, b: BP<c, cap, t>, k: Array<
 
 # The layer on the n positions t0 .. t0 + n - 1, whose inputs are x's rows: main.bend's block_gen with each of its
 # seven products done once for every position. tT = t0 + n (e) and tT <= cap (le).
-def block_p(+c: M.Cfg, +d: Nat, lw: M.LW<c>, -cap: Nat, +t0: Nat, +n: Nat, -tT: Nat, -e: {Nat.add(t0, n) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, kv: M.KV<cap, t0>, x: Array<F32>) -> BP<c, cap, tT>:
+def block_p(+c: M.Cfg, lw: M.LW<c>, -cap: Nat, +t0: Nat, +n: Nat, -tT: Nat, -e: {Nat.add(t0, n) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, kv: M.KV<cap, t0>, x: Array<F32>) -> BP<c, cap, tT>:
   match lw:
     case M.LW{+ln1, wq, wk, wv, wo, +ln2, wg, wu, wd}:
       p2_then(BP<c, cap, tT>, norms(n, c, ln1, M.Cfg.dim(c), 0, x, zeros(n, M.Cfg.dim(c))), x1 => n1 =>
@@ -232,7 +239,7 @@ def block_p(+c: M.Cfg, +d: Nat, lw: M.LW<c>, -cap: Nat, +t0: Nat, +n: Nat, -tT: 
             with2(BP<c, cap, tT>, Array.clone(F32, nb), nc => nd =>
               bm_then(BP<c, cap, tT>, M.Cfg.kvw(c), M.Cfg.dim(c), mm(M.Cfg.kvw(c), M.Cfg.dim(c), wk, n, nc), wk2 => ko =>
                 bm_then(BP<c, cap, tT>, M.Cfg.kvw(c), M.Cfg.dim(c), mm(M.Cfg.kvw(c), M.Cfg.dim(c), wv, n, nd), wv2 => vo =>
-                  ap_then(BP<c, cap, tT>, cap, tT, atts(n, c, d, cap, t0, tT, e, le, 0, U32.from_nat(n), qo, ko, vo, kv, zeros(n, M.Cfg.dim(c))), kv2 => at =>
+                  ap_then(BP<c, cap, tT>, cap, tT, atts(n, c, cap, t0, tT, e, le, 0, U32.from_nat(n), qo, ko, vo, kv, zeros(n, M.Cfg.dim(c))), kv2 => at =>
                     bm_then(BP<c, cap, tT>, M.Cfg.dim(c), M.Cfg.dim(c), mm(M.Cfg.dim(c), M.Cfg.dim(c), wo, n, at), wo2 => ao =>
                       p2_then(BP<c, cap, tT>, res_norm(n, c, ln2, M.Cfg.dim(c), 0, U32.from_nat(n), ao, x1, zeros(n, M.Cfg.dim(c))), x2 => n2 =>
                         with2(BP<c, cap, tT>, Array.clone(F32, n2), ne => nf =>
@@ -255,11 +262,11 @@ def rp_then(-R: Type, -c: M.Cfg, -cap: Nat, -t: Nat, r: RP<c, cap, t>, k: Array<
       k(x, ls, cs)
 
 # every layer in turn; al and ac collect the layers and the caches already done, newest first
-def run_p(+c: M.Cfg, +d: Nat, -cap: Nat, +t0: Nat, +n: Nat, -tT: Nat, -e: {Nat.add(t0, n) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, ls: List<&1, M.LW<c>>, cs: List<&1, M.KV<cap, t0>>, al: List<&1, M.LW<c>>, ac: List<&1, M.KV<cap, tT>>, x: Array<F32>) -> RP<c, cap, tT>:
+def run_p(+c: M.Cfg, -cap: Nat, +t0: Nat, +n: Nat, -tT: Nat, -e: {Nat.add(t0, n) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, ls: List<&1, M.LW<c>>, cs: List<&1, M.KV<cap, t0>>, al: List<&1, M.LW<c>>, ac: List<&1, M.KV<cap, tT>>, x: Array<F32>) -> RP<c, cap, tT>:
   match ls cs:
     case Con{l, lt} Con{k, kt}:
-      bp_then(RP<c, cap, tT>, c, cap, tT, block_p(c, d, l, cap, t0, n, tT, e, le, k, x), x2 => kv => l2 =>
-        run_p(c, d, cap, t0, n, tT, e, le, lt, kt, l2 <> al, kv <> ac, x2))
+      bp_then(RP<c, cap, tT>, c, cap, tT, block_p(c, l, cap, t0, n, tT, e, le, k, x), x2 => kv => l2 =>
+        run_p(c, cap, t0, n, tT, e, le, lt, kt, l2 <> al, kv <> ac, x2))
     case _ _:
       RP{x, List.reverse(&1, M.LW<c>, al), List.reverse(&1, M.KV<cap, tT>, ac)}
 
@@ -300,9 +307,9 @@ def OutP.then(-R: Type, -c: M.Cfg, -cap: Nat, -t: Nat, o: OutP<c, cap, t>, k: Li
 # last position only, as main.bend's head_of does them. ids must hold n ids (a shorter list leaves rows of zeros).
 def forward_prompt(+c: M.Cfg, -cap: Nat, +t0: Nat, +n: Nat, -tT: Nat, -e: {Nat.add(t0, n) == tT : Nat}, -le: {True{} == TA.leb(tT, cap) : Bool}, m: M.Model<c>, cs: List<&1, M.KV<cap, t0>>, ids: List<&2, Nat>) -> OutP<c, cap, tT>:
   match m:
-    case M.Model{+d, emb, ls, +lnf}:
+    case M.Model{d, emb, ls, +lnf}:
       ex_then(OutP<c, cap, tT>, c, embed(ids, c, 0, emb, zeros(n, M.Cfg.dim(c))), emb2 => x =>
-        rp_then(OutP<c, cap, tT>, c, cap, tT, run_p(c, d, cap, t0, n, tT, e, le, ls, cs, Nil{}, Nil{}, x), x2 => ls2 => cs2 =>
+        rp_then(OutP<c, cap, tT>, c, cap, tT, run_p(c, cap, t0, n, tT, e, le, ls, cs, Nil{}, Nil{}, x), x2 => ls2 => cs2 =>
           al_then(OutP<c, cap, tT>, row(M.Cfg.dim(c), U32.from_nat(Nat.sub(n, 1n)), x2), x3 => l =>
             M.mv(OutP<c, cap, tT>, M.Cfg.vocab(c), M.Cfg.dim(c), emb2, M.rmsnorm(c, l, lnf), emb3 => lg =>
               OutP{lg, cs2, M.Model{d, emb3, ls2, lnf}}))))
