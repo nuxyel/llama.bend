@@ -1039,9 +1039,10 @@ def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, 
   forward_k(True{}, c, cap, t, m, cs, room, tok)
 
 # a position for generation: the same logits, caches and model, with the activations left empty, since generation
-# never reads them (about a fifth faster per token on 16 threads, llama.bend NOTES, 2026-10-16). One band (d = 0, two
-# threads or fewer) kept them until 2026-11-11: leaving them out had measured 4-11% slower on one thread with Bend
-# 2.0.37, from where clang placed the product's loop, not from the work
+# never reads them (about a fifth faster per token on 16 threads, llama.bend NOTES, 2026-10-16). One band (d = 0)
+# kept them until 2026-11-12, since leaving them out had measured 4-11% slower on one thread with Bend 2.0.37. On
+# 2.0.40 it measures from the same to 4% faster on an idle machine, and 10 to 16% faster while the screen is
+# changing (NOTES, 2026-11-12)
 def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
     case Model{+d, emb, ls, +lnf}:
