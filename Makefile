@@ -27,7 +27,7 @@ laws:             ## every file of the package checked by bend and again by the 
 	for f in $(PKG); do echo "== $$f"; bend $$f && bend $$f --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK" || exit 1; done
 	scripts/check_rejected.sh
 
-check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
+check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; the prompt in one pass against position by position; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
 	$(PY) reference/prep.py --check
 	mkdir -p .scratch
 	bend demo/tok.bend -o .scratch/tok
@@ -45,6 +45,7 @@ check: laws       ## the laws, prep, the Bend tokenizer and chat template agains
 	$(PY) reference/test_gen.py .scratch/gen
 	[ -f $(DIR)/test/chat_gen.json ] || $(PY) reference/chat_gen_ref.py
 	$(PY) reference/test_chat_gen.py .scratch/gen
+	$(PY) reference/test_prompt.py .scratch/gen
 	bend demo/sample_test.bend -o .scratch/sample_test
 	$(PY) reference/test_sample.py .scratch/sample_test .scratch/gen
 	[ -f bench/expected-$(MODEL).txt ] || $(PY) reference/bench_ref.py
