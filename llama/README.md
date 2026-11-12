@@ -66,12 +66,12 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 
 | Name | What |
 |---|---|
-| `LW<c>`, `Model<c>` | a layer's weights and the whole model; each matrix is a `bend-ml-tensor-array` `Bands<rows, cols>` with its shape from `c`, and the model keeps its parallel depth `d` (`depth_for` of the thread count) |
+| `LW<c>`, `Model<c>` | a layer's weights and the whole model; each matrix is a `bend-ml-tensor-array` `Bands<rows, cols>` with its shape from `c`, and the model keeps its parallel depth `d` (`depth_in` of the config and the thread count) |
 | `KV<cap, t>`, `KV.empty(c, cap)`, `KV.push`, `caches(c, n, cap)` | the key/value cache of `t` positions, in arrays with room for `cap` positions; a push needs a proof that `t < cap` |
 | `step_room`, `step_inv` | for a loop with `t + steps left = cap`: the proof that `t < cap`, and the same equation one step later |
 | `block(c, d, lw, cap, t, kv, room, rot, x) -> BR<c, cap, t>` | one layer at position `t` (`d = 0`: attention's key/value heads one after another; otherwise in parallel): the output, the cache grown to `t + 1` positions, the weights handed back, and the activations (`Act`) |
 | `forward(c, cap, t, m, cs, room, tok) -> Out<c, cap, t>` | one position of the whole model: logits, the final norm, every layer's `Act`, the caches, the model |
-| `forward_gen(c, cap, t, m, cs, room, tok)` | `forward` for generation: the same logits, caches and model, with every layer's activations left empty when the weights are in bands (more than two threads), about 20% faster per token there; `block_gen` is `block` without them |
+| `forward_gen(c, cap, t, m, cs, room, tok)` | `forward` for generation: the same logits, caches and model, with every layer's activations left empty, about 20% faster per token on 16 threads; `block_gen` is `block` without them |
 | `forward_pre(c, cap, t, m, cs, room, tok)` | a prompt position, whose logits nobody reads: the layers and caches as `forward_gen` gives them, without the final norm and the product by the embedding (`lg` and `nf` empty) |
 | `BR.then`, `Out.then` | continue with the fields of a result; a loop over positions recurses inside them |
 | `argmax`, `AM.i`, `AM.v` | the first index of the largest logit, and that logit |
@@ -79,7 +79,7 @@ SwiGLU, no biases, plain RoPE and a tied LM head.
 | `uniform(seed, n)`, `hash32` | draw `n` of a seed: the top 24 bits of `hash32(hash32(seed) + n)` (Chris Wellons' lowbias32) times 2^-24; no state between draws |
 | `topk(k, xs)`, `sample.cs`, `Cand` | the two halves of `sample`: the candidates, largest first, and the draw from them |
 | `rmsnorm`, `inv_freq`, `rot_at`, `rope`, `swiglu`, `attention` | the pieces of a layer |
-| `read_cfg`, `load_model`, `load_lw`, `depth_for` | loading a model prepared by `prep.py`, in plain Bend: every tensor read from the downloaded `<dir>/hf/model.safetensors` with `File.read_at`, BF16 widened exactly to F32, at the byte offsets `prep.py` writes into `<dir>/w/st.txt` (since 0.2.1.0; 0.2.0.0 read F32 copies, `<dir>/w/<name>.bin`, which `make prep F32=1` still writes) |
+| `read_cfg`, `load_model`, `load_lw`, `depth_in`, `depth_for` | loading a model prepared by `prep.py`, in plain Bend: every tensor read from the downloaded `<dir>/hf/model.safetensors` with `File.read_at`, BF16 widened exactly to F32, at the byte offsets `prep.py` writes into `<dir>/w/st.txt` (since 0.2.1.0; 0.2.0.0 read F32 copies, `<dir>/w/<name>.bin`, which `make prep F32=1` still writes). `depth_in(c, threads)` is the band depth `load_model` gives a model: one band on one thread, two on two, and from three threads on 16 bands for a model at least 1024 wide, or for a narrower one 4 on four threads, 8 on three and on five to eight and 16 beyond; `depth_for(threads)` is the narrow model's rule (up to 0.2.1.1 it gave one band up to two threads and 16 above) |
 | `load.bend`: `load_model` | the same model, read from the downloaded `hf/model.safetensors` itself: each band of weights read straight into its array by `bend-ml-binary-read`'s `read_bf16_at` (the same numbers as `main.bend`'s loader, faster: the 1.7B in about 8 s instead of 60-70 with the F32 copies). It is foreign code (C and JavaScript), so it lives in its own file: `main.bend` does not import it and keeps `--verdict` clean |
 
 An `Array` has a single owner, so every product hands its matrix back (`block` returns its `LW`, `forward` its
