@@ -16,7 +16,8 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
   2026-11-12, not on BendHub yet): SmolLM2's tokenizer and chat template (`Tables`, `load`, `encode`, `decode`,
   `chat`), its character classes, the prompt in one pass (`forward_prompt`: every layer over all the prompt's
   positions, the same bits as position by position; `reference/test_prompt.py` compares the two), and the generation
-  loop (`Pick`, `tokens`, `generate`); `llama/README.md` lists their API. `llama/package.bend` is the
+  loop (`Pick`, `tokens`, `generate`, and `turn`: a conversation that keeps its caches between the turns);
+  `llama/README.md` lists their API. `llama/package.bend` is the
   entry to publish: it imports every file of the package, because `--publish` sends the entry and what it imports.
   `make laws` runs bend and `--verdict` on each of the six (the Makefile's `PKG`).
 - `llama/load.bend`: the loader the demos use, the same model read from `hf/model.safetensors` (BF16, at `w/st.txt`'s
