@@ -20,7 +20,7 @@
 # bits> ...`, the top-k candidates largest first (for reference/test_sample.py).
 
 import Base
-import ./tok.bend as K
+import ../llama/tok.bend as K
 import ../llama/main.bend as M
 import ../llama/load.bend as L
 import bend-ml-bpe-tokenizer@0.1.3.0/main.bend as BPE

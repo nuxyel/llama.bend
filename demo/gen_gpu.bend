@@ -7,7 +7,7 @@
 # make bench-gpu checks its tokens against transformers'.
 
 import Base
-import ./tok.bend as K
+import ../llama/tok.bend as K
 import ./gen.bend as D
 import ../llama/main.bend as M
 import ../llama/gpu.bend as G
