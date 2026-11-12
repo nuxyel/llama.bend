@@ -154,7 +154,7 @@ llama.bend's `demo/hello.bend` is this program with a command line, and `make ch
 | Name | What |
 |---|---|
 | `forward_prompt(c, cap, t0, n, tT, e, le, m, cs, ids) -> OutP<c, cap, tT>` | the `n >= 1` tokens `ids` at positions `t0 .. t0 + n - 1`, with the caches of the positions before them (`cs`, one per layer, at `KV<cap, t0>`): the logits of the last position, the caches at `KV<cap, tT>` and the model. `e` is the proof that `t0 + n = tT` and `le` that `tT <= cap`, so the caches are never written past their room. `OutP.then` continues with the three fields |
-| `block_p(c, d, lw, cap, t0, n, tT, e, le, kv, x) -> BP<c, cap, tT>` | one layer on the `n` positions whose inputs are the rows of `x`: `block_gen` with each of its seven products done once for every position |
+| `block_p(c, lw, cap, t0, n, tT, e, le, kv, x) -> BP<c, cap, tT>` | one layer on the `n` positions whose inputs are the rows of `x`: `block_gen` with each of its seven products done once for every position, and a position's key/value heads one after another whatever the model's depth |
 | `mm(r, c, b, n, x) -> BM<r, c>` | `W` (in bands) times the `n` rows of `x`: tensor-array's `gemm_t8` with the weights as its first operand, band by band in parallel; `vec(outs, i, n)` reads position `i`'s vector out of the result |
 
 `gen.bend` takes the model as a parameter, so a program chooses its loader (`main.bend`'s `load_model`, or
