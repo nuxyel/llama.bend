@@ -82,23 +82,29 @@ I did not measure the other systems on these counts.
 ## The prompt: time to the first token
 
 The tables above leave the prompt out. Since `4770462` a prompt runs through each layer in one pass
-(`llama/prompt.bend`), with the bits of the position-by-position path before it (`250bc14`). llama.bend alone, in
-an idle round on 2026-11-12 (12:42 to 13:05): seconds from the start of the prompt to the first new token, medians
-of 5 alternated rounds (3 for the 1.7B), every pair of ranges far apart.
+(`llama/prompt.bend`), with the bits of the position-by-position path before it (`250bc14`), and since `e0c785d` the
+pass runs a position's attention heads one after another, which is what stopped it from losing time on many
+threads. llama.bend alone, in two idle rounds on 2026-11-12 (12:42 to 13:05 and 18:42 to 18:56): seconds from the
+start of the prompt to the first new token, medians of 5 alternated rounds (3 for the 1.7B).
 
-| model, prompt | 1 thread, before → now | 16 threads, before → now |
-|---|---|---|
-| SmolLM2-135M, 56 tokens | 3.51 → 1.12 | 2.71 → 1.03 |
-| SmolLM2-135M, 77 tokens | 4.73 → 1.54 | 3.86 → 1.41 |
-| SmolLM2-360M, 56 tokens | 9.17 → 2.91 | 5.11 → 1.79 |
-| SmolLM2-360M, 77 tokens | 12.7 → 3.94 | 7.20 → 2.50 |
-| SmolLM2-1.7B, 25 tokens | 21.1 → 6.79 | 6.27 → 2.41 |
-| SmolLM2-1.7B, 77 tokens | 65.4 → 18.0 | 20.8 → 7.28 |
+| model, prompt | 1 thread: by position → one pass | 16 threads: by position → one pass → heads in sequence | 22 threads, now |
+|---|---|---|---|
+| SmolLM2-135M, 56 tokens | 3.51 → 1.12 | 2.71 → 1.03 → 0.72 | 0.66 |
+| SmolLM2-135M, 77 tokens | 4.73 → 1.54 | 3.86 → 1.41 → 0.98 | 0.93 |
+| SmolLM2-360M, 56 tokens | 9.17 → 2.91 | 5.11 → 1.79 → 1.47 | 1.39 |
+| SmolLM2-360M, 77 tokens | 12.7 → 3.94 | 7.20 → 2.50 → 2.04 | 1.99 |
+| SmolLM2-1.7B, 25 tokens | 21.1 → 6.79 | 6.27 → 2.41 → 2.26 | 2.25 |
+| SmolLM2-1.7B, 77 tokens | 65.4 → 18.0 | 20.8 → 7.28 → 6.39 | 6.33 |
 
-3.1 to 3.6 times faster on one thread and 2.6 to 2.9 times on 16. The pass gains little from threads on the two
-small models, which are fastest on 4 (0.78 s and 1.59 s for the 56 tokens). I did not measure the other systems'
-time to the first token. The rest is in [`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in
-[`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/).
+One pass is 3.1 to 3.6 times faster than position by position on one thread; with the heads in sequence it is 2.8
+to 3.9 times faster on 16. The second round ran the pass both ways. The heads in sequence change nothing on one
+thread (35.11 and 35.09 G instructions for the 135M's 56 tokens) and take 15% to 38% off the 135M's time on 4 to 22
+threads, 7% to 26% off the 360M's, and 3% to 12% off the 1.7B's on 8 to 22; its one-pass numbers on 16 threads
+repeat the first round's within 2.1%. The two small models no longer lose time past 4 threads, and gain none
+either: the 135M's 56 tokens take 0.66, 0.71, 0.72 and 0.66 s on 4, 8, 16 and 22 threads (0.78, 0.87, 1.04 and 1.05
+before). I did not measure the other systems' time to the first token. The rest is in [`NOTES.md`](NOTES.md)
+(2026-11-12), with the raw rows in [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/) and
+[`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
 
 ## Longer generations: 512 tokens
 
