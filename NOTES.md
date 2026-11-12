@@ -1712,3 +1712,67 @@ twelve chat turns, whose prompts are 33 to 52 ids, on the three instruct checkpo
   processes, the compositor and the notification server, at work on other cores for every frame, with the panel on
   or off. I still do not know what in the processor it changes.
 - Raw rows: [`bench/2026-11-12-activations/prompt.tsv`](bench/2026-11-12-activations/prompt.tsv).
+
+## The prompt in one pass (2026-11-12)
+
+Until now a prompt ran one position at a time (`forward_pre`), and every position read every weight matrix: a chat
+turn of 37 ids spent most of its time there. `llama/prompt.bend`, a new file of the package, runs the prompt's
+positions through each layer together.
+
+- **How.** `forward_prompt` puts the embedding rows of the n ids in an array, one row a position, and every layer
+  runs `block_p` on it: the norm of every row; Q, K and V by three products; then position by position, as
+  `block_gen` does, the rotations, the push into the cache and attention; the output projection by a product; the
+  residual and the second norm; gate and up by two products, SwiGLU row by row, down by a product; the residual. The
+  final norm and the product by the embedding run on the last position only. Between the products each position is
+  read back as a list and goes through `main.bend`'s own functions, so every number is computed by the same
+  operations in the same order.
+- **The product.** One band of W and the n rows of X go to tensor-array's `gemm_t8` (cells of 8) with W as its
+  first operand, so each row of W meets every position before the next row is read. I had planned the operands the
+  other way round (`Mat.matmul_nt`'s layout), which walks the packed W once per position: on a probe of the 1.7B's
+  8192 x 2048 with 25 positions, on one thread, 121 ms against 45, and 201 ms row by row, the old path's order (a
+  diagnosis, not an idle run). The layouts give the same bits: a product of two numbers commutes exactly, and the
+  sums along a row are the dot product's in all of them (tensor-array's `tests/t8.bend` checks cells of 8 against the
+  scalar loop). The bands run as `Bands.matvec_l` runs them for one vector: the two halves in a parallel let, each
+  with a copy of X.
+- **The cache's index stays static.** A layer's position loop holds the cache at `KV<cap, t>` with `left` positions
+  to go and an erased proof that t + left = tT, where tT <= cap. Each push gets its proof of room from `step_room` and
+  `leb_trans`, and at the end `add_zero` turns t + 0 = tT into t = tT; `kv_cast` asks for that proof and rebuilds the
+  cache at tT (the count is in the type only, as in `KV.push`). `bend --verdict` accepts the file; it holds no law of
+  its own yet.
+- **`gen.bend`'s `tokens`** runs a prompt of two ids or more through `forward_prompt`, chooses the first token from
+  its logits and continues its loop at the prompt's length. One id keeps the old path (`tokens.seq`), which
+  `GEN_SEQ=1` selects in `demo/gen.bend` for any prompt.
+- **The same bits.** `reference/test_prompt.py` (new, in `make check`) runs the two paths of one program on prompts
+  of 1, 2, 7 and 77 ids and on a chat turn, on one thread and on 16: the same prompt ids, generated ids, logit bits
+  and text, on the three models and on the 135M's instruct checkpoint. The checklist on a busy machine: `make check`
+  (10 tests, 0 failures, the laws with `--verdict` on the package's six files among them), `make bits` on 22, 1, 2
+  and 4 threads (23 outputs identical), `reference/test_gen.py` on the 360M and on the 1.7B, the twelve chat turns on
+  the three instruct checkpoints on 1 and 22 threads, bend-lint with 0 findings.
+- **Measured** in an idle round (12:42 to 13:05, nobody at the machine), `250bc14` against `4770462`: ms from the
+  start of the prompt to the first new token, medians of 5 alternated rounds (3 for the 1.7B), every pair of ranges
+  far apart:
+
+  | model, prompt ids | 1 thread, before → now | 16 threads, before → now | now, its best count |
+  |---|---|---|---|
+  | 135M, 56 | 3510 → 1115 (3.1x) | 2714 → 1034 (2.6x) | 775 on 4 threads |
+  | 135M, 77 | 4727 → 1537 (3.1x) | 3858 → 1409 (2.7x) | 1042 on 4 |
+  | 360M, 56 | 9169 → 2905 (3.2x) | 5105 → 1788 (2.9x) | 1593 on 4 |
+  | 360M, 77 | 12663 → 3936 (3.2x) | 7201 → 2504 (2.9x) | 2144 on 4 |
+  | 1.7B, 25 | 21101 → 6794 (3.1x) | 6266 → 2406 (2.6x) | 2404 on 22 |
+  | 1.7B, 77 | 65388 → 17960 (3.6x) | 20829 → 7281 (2.9x) | 6912 on 8 |
+
+  A prompt position costs 20 ms on the 135M on one thread (63 before), 51 on the 360M (164) and 233 to 272 on the
+  1.7B (845); on one thread the whole run takes 35.1 G instructions instead of 78.0 G (the 135M, 56 ids).
+- **What it does not do yet.** The pass gains little from threads on the two small models: both are fastest on 4
+  threads and slower from 8 on. Products are about half of one thread's time (a diagnosis profile of the 135M:
+  `gemm_t8` 46%, packing the operands 5%); the list work between them runs on one thread, and with 16 bands each
+  product copies the prompt's rows at every fork and packs them again in every band. A layer's products that do not
+  depend on each other (Q, K and V; gate and up) still run one after another.
+- **The tokens after the prompt** are the code they were. On 16 threads they came out faster in this round after
+  the one-pass prompt (47.0 against 62.9 ms on the 135M, over the first eight tokens), which is a transient of the
+  machine and not of the program: in a diagnosis after the round, 64 tokens after the same prompt cost 46, 53, 60
+  and 64 ms over tokens 1-8, 9-16, 17-32 and 33-64 after the one-pass prompt (1.0 s of 16 threads before them) and 61,
+  62, 64 and 65 ms after the position-by-position one (2.7 s before them). The first seconds of a 16-thread run are
+  faster than its steady state, by about a quarter on the 135M; I take it for the processor's power budget and did
+  not check. The 32-token rows of `BENCHMARK.md`'s tables are inside that window, for every system alike.
+- Raw rows: [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/).
