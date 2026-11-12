@@ -25,25 +25,6 @@ import ../llama/main.bend as M
 import ../llama/load.bend as L
 import bend-ml-bpe-tokenizer@0.1.3.0/main.bend as BPE
 
-# ---- the prompt as UTF-8 bytes ----
-
-def selb(b: Bool, x: List<&2, U32>, y: List<&2, U32>) -> List<&2, U32>:
-  match b:
-    case True{}:
-      x
-    case False{}:
-      y
-
-def enc1(+cp: U32) -> List<&2, U32>:
-  selb(U32.is_lt(cp, 128), cp <> Nil{}, selb(U32.is_lt(cp, 2048), (192 + U32.div(cp, 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{}), selb(U32.is_lt(cp, 65536), (224 + U32.div(cp, 4096) : U32) <> ((128 + U32.mod(U32.div(cp, 64), 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{})), (240 + U32.div(cp, 262144) : U32) <> ((128 + U32.mod(U32.div(cp, 4096), 64) : U32) <> ((128 + U32.mod(U32.div(cp, 64), 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{}))))))
-
-def utf8_of(cs: List<&2, Char>) -> List<&2, U32>:
-  match cs:
-    case Nil{}:
-      Nil{}
-    case Con{Chr{cp}, t}:
-      List.append(&2, U32, enc1(cp), utf8_of(t))
-
 # ---- the generation loop ----
 
 def bits(f: F32) -> U32:
@@ -187,9 +168,9 @@ def start2(+c: M.Cfg, model: M.Model<c>, +o: Opts, +table: List<&2, BPE.Rule>, +
 def prompt_ids(chat: Bool, +table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, prompt: String) -> List<&2, Nat>:
   match chat:
     case True{}:
-      K.chat_ids(table, perm, [K.bytes_of(String.to_list("user")), utf8_of(String.to_list(prompt))], True{})
+      K.chat_ids(table, perm, [K.bytes_of(String.to_list("user")), K.utf8_of(String.to_list(prompt))], True{})
     case False{}:
-      K.encode_text(table, perm, utf8_of(String.to_list(prompt)))
+      K.encode_text(table, perm, K.utf8_of(String.to_list(prompt)))
 
 def generate(+c: M.Cfg, model: M.Model<c>, +o: Opts, +ns: List<&2, Nat>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
   +table = K.rules.go(ns, 0n)

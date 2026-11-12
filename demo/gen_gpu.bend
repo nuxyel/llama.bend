@@ -47,7 +47,7 @@ def start2(+c: M.Cfg, model: G.Model<c>, +table: List<&2, BPE.Rule>, +perm: List
 def generate(+c: M.Cfg, model: G.Model<c>, +ns: List<&2, Nat>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
   +table = K.rules.go(ns, 0n)
   +perm = K.nums(pb)
-  start2(c, model, table, perm, K.encode_text(table, perm, D.utf8_of(String.to_list(prompt))), n)
+  start2(c, model, table, perm, K.encode_text(table, perm, K.utf8_of(String.to_list(prompt))), n)
 
 def run3(ok: Bool, +dir: String, +ns: List<&2, Nat>, +pb: List<&2, U32>, prompt: String, n: Nat) -> IO(Unit):
   match ok:

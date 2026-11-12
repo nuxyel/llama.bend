@@ -657,6 +657,25 @@ def first_is_system(ms: List<&2, List<&2, U32>>) -> Bool:
 def chat_ids(+table: List<&2, BPE.Rule>, +perm: List<&2, Nat>, +ms: List<&2, List<&2, U32>>, +gen: Bool) -> List<&2, Nat>:
   chat_sys(first_is_system(ms), table, perm, ms, gen)
 
+# ---- a String as UTF-8 bytes (a String is a list of code points) ----
+
+def selb(b: Bool, x: List<&2, U32>, y: List<&2, U32>) -> List<&2, U32>:
+  match b:
+    case True{}:
+      x
+    case False{}:
+      y
+
+def enc1(+cp: U32) -> List<&2, U32>:
+  selb(U32.is_lt(cp, 128), cp <> Nil{}, selb(U32.is_lt(cp, 2048), (192 + U32.div(cp, 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{}), selb(U32.is_lt(cp, 65536), (224 + U32.div(cp, 4096) : U32) <> ((128 + U32.mod(U32.div(cp, 64), 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{})), (240 + U32.div(cp, 262144) : U32) <> ((128 + U32.mod(U32.div(cp, 4096), 64) : U32) <> ((128 + U32.mod(U32.div(cp, 64), 64) : U32) <> ((128 + U32.mod(cp, 64) : U32) <> Nil{}))))))
+
+def utf8_of(cs: List<&2, Char>) -> List<&2, U32>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{Chr{cp}, t}:
+      List.append(&2, U32, enc1(cp), utf8_of(t))
+
 # a file of messages: role and content, each followed by a 0 byte; z: whether the head of bs is a 0 byte
 def head_zero(bs: List<&2, U32>) -> Bool:
   match bs:
