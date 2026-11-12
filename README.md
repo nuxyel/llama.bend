@@ -208,9 +208,9 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 | Path | What |
 |---|---|
-| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`); the fast loader the demos use (`load.bend`) |
+| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`; `bend-ml-llama@0.2.1.1` on BendHub is `main.bend` alone); beside them, the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
-| [`demo/`](demo/) | `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read), the tokenizer and chat template |
+| [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
 | [`tests/`](tests/) | programs that must not compile |
 | [`reference/`](reference/) | download and preparation, the `transformers` and `tokenizers` oracles, the tests |
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |
