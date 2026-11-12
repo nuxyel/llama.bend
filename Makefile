@@ -7,7 +7,7 @@ export PATH := $(HOME)/.bend/bin:$(HOME)/.elan/bin:$(PATH)
 PY := reference/.venv/bin/python
 # the files of bend-ml-llama: the entry to publish (package.bend) and what it imports. load.bend (foreign code) and
 # gpu.bend (an unsafe primitive of Base) stay outside
-PKG := llama/main.bend llama/unicode.bend llama/tok.bend llama/gen.bend llama/package.bend
+PKG := llama/main.bend llama/unicode.bend llama/tok.bend llama/prompt.bend llama/gen.bend llama/package.bend
 
 .PHONY: setup prep laws check bits bench bench-gpu media lint
 

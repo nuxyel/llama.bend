@@ -8,4 +8,5 @@ import Base
 import ./main.bend as M
 import ./unicode.bend as U
 import ./tok.bend as K
+import ./prompt.bend as P
 import ./gen.bend as G
