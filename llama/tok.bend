@@ -1,9 +1,17 @@
-# SmolLM2 tokenizer in Bend: pre-tokenizer (SmolLM2's Digits split, then the GPT-2 regex, over bytes) +
-# the 48,900 merge rules, applied with the bend-ml-bpe-tokenizer package (proved roundtrip).
+# bend-ml-llama, the tokenizer: SmolLM2's, in Bend. A pre-tokenizer (SmolLM2's Digits split, then the GPT-2 regex,
+# over bytes) + the 48,900 merge rules, applied with the bend-ml-bpe-tokenizer package (proved roundtrip); decoding;
+# and SmolLM2-Instruct's chat template.
+#
+#   import ./tok.bend as K
+#   tb : K.Tables <- K.load(dir)                 # merges_num.txt and perm.txt of a model directory (reference/prep.py)
+#   K.encode(tb, "Once upon a time")             # the ids of a text
+#   K.decode(tb, ids)                            # the text of ids, special tokens left out
+#   K.chat(tb, ["user", "Hi there!"], True{})    # the ids of a conversation in the chat template, the answer asked for
 #
 # Adapted from bend-ml's demos/gpt2/tok.bend (MIT). What changes for SmolLM2: every \p{N} character is its
 # own piece; the 21 bytes without a token are dropped before the merges; merge k is id 252 + k; 0x1C-0x1F
-# are not whitespace. reference/test_tok.py checks it against `tokenizers`.
+# are not whitespace. llama.bend's reference/test_tok.py, test_detok.py and test_chat.py check it against `tokenizers`
+# and transformers, through demo/tok.bend.
 #
 # The pre-tokenizer decodes UTF-8 and classifies every code point like the regex does
 # (\s, \p{L}, \p{N}); the classes of code points >= 128 come from unicode.bend. Known limits: code points
@@ -675,6 +683,67 @@ def utf8_of(cs: List<&2, Char>) -> List<&2, U32>:
       Nil{}
     case Con{Chr{cp}, t}:
       List.append(&2, U32, enc1(cp), utf8_of(t))
+
+# ---- the tables of a model, and text to ids and back ----
+
+# the merge rules and the byte permutation of a model, built once for encoding and decoding
+type Tables is Data:
+  Tables{rules: List<&2, BPE.Rule>, perm: List<&2, Nat>}
+
+def tables_of(ok: Bool, +ns: List<&2, Nat>, pb: List<&2, U32>) -> Maybe<&2, Tables>:
+  match ok:
+    case True{}:
+      Some{Tables{rules.go(ns, 0n), nums(pb)}}
+    case False{}:
+      None{}
+
+# the tables in the two files reference/prep.py writes for a model (merges_num.txt and perm.txt), or None for a
+# malformed merges table (ids_ok). The merges file is parsed once, for the check and for the rules.
+def read_tables(merges: String, perm: String) -> IO(Maybe<&2, Tables>):
+  do IO<Maybe<&2, Tables>>:
+    mb : List<&2, U32> <- read_bytes(merges)
+    pb : List<&2, U32> <- read_bytes(perm)
+    +ns : List<&2, Nat> = nums(mb)
+    return tables_of(ids_ok(ns, 0n), ns, pb)
+
+def load.check(dir: String, mt: Maybe<&2, Tables>) -> IO(Tables):
+  match mt:
+    case Some{tb}:
+      IO.pure(Tables, tb)
+    case None{}:
+      IO.die(Tables, 1, dir ++ "/merges_num.txt: not a merges table (an odd count, or a rule that names an id not made before it); run make prep again")
+
+# the tables of the model in dir; a malformed merges table stops the program
+def load(+dir: String) -> IO(Tables):
+  do IO<Tables>:
+    mt : Maybe<&2, Tables> <- read_tables(dir ++ "/merges_num.txt", dir ++ "/perm.txt")
+    load.check(dir, mt)
+
+# the ids of a text
+def encode(tb: Tables, text: String) -> List<&2, Nat>:
+  match tb:
+    case Tables{+rules, +perm}:
+      encode_text(rules, perm, utf8_of(String.to_list(text)))
+
+# the text of ids: special tokens left out, bytes that are not valid UTF-8 as U+FFFD
+def decode(tb: Tables, ids: List<&2, Nat>) -> String:
+  match tb:
+    case Tables{+rules, +perm}:
+      decode_text(rules, perm, ids)
+
+def utf8s(ms: List<&2, String>) -> List<&2, List<&2, U32>>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case Con{h, t}:
+      utf8_of(String.to_list(h)) <> utf8s(t)
+
+# the ids of a conversation in SmolLM2-Instruct's chat template; ms: role, content, role, content, ...; gen: end with
+# <|im_start|>assistant\n, which asks for the answer
+def chat(tb: Tables, ms: List<&2, String>, +gen: Bool) -> List<&2, Nat>:
+  match tb:
+    case Tables{+rules, +perm}:
+      chat_ids(rules, perm, utf8s(ms), gen)
 
 # a file of messages: role and content, each followed by a 0 byte; z: whether the head of bs is a 0 byte
 def head_zero(bs: List<&2, U32>) -> Bool:
