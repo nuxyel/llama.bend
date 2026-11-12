@@ -97,13 +97,14 @@ start of the prompt to the first new token, medians of 5 alternated rounds (3 fo
 | SmolLM2-1.7B, 77 tokens | 65.4 → 18.0 | 20.8 → 7.28 → 6.39 | 6.33 |
 
 One pass is 3.1 to 3.6 times faster than position by position on one thread; with the heads in sequence it is 2.8
-to 3.9 times faster on 16. The second round ran the pass both ways. The heads in sequence change nothing on one
-thread (35.11 and 35.09 G instructions for the 135M's 56 tokens) and take 15% to 38% off the 135M's time on 4 to 22
-threads, 7% to 26% off the 360M's, and 3% to 12% off the 1.7B's on 8 to 22; its one-pass numbers on 16 threads
-repeat the first round's within 2.1%. The two small models no longer lose time past 4 threads, and gain none
-either: the 135M's 56 tokens take 0.66, 0.71, 0.72 and 0.66 s on 4, 8, 16 and 22 threads (0.78, 0.87, 1.04 and 1.05
-before). I did not measure the other systems' time to the first token. The rest is in [`NOTES.md`](NOTES.md)
-(2026-11-12), with the raw rows in [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/) and
+to 3.9 times faster on 16. The second round ran the pass with its heads in parallel and in sequence, and its
+numbers for the parallel heads on 16 threads repeat the first round's within 2.1%. The heads in sequence change
+nothing on one thread (35.11 and 35.09 G instructions for the 135M's 56 tokens) and take 15% to 38% off the 135M's
+time on 4 to 22 threads, 7% to 26% off the 360M's, and 3% to 12% off the 1.7B's on 8 to 22. The two small models no
+longer lose time past 4 threads, and gain none either: the 135M's 56 tokens take 0.66, 0.71, 0.72 and 0.66 s on 4,
+8, 16 and 22 threads (0.78, 0.87, 1.04 and 1.05 before). I did not measure the other systems' time to the first
+token. The rest is in [`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in
+[`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/) and
 [`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
 
 ## A conversation: the first token of a later turn
