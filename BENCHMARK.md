@@ -51,9 +51,10 @@ machine. transformers at 16 threads varies a lot from sample to sample (135M: 13
 llama.bend's own per-token timestamps agree with these: on the 1.7B, 868 ms on one thread and 293 on 16, within 1 ms
 of the black-box numbers.
 
-The one-thread numbers are the idle protocol's: nothing else running and the screen still. With the screen changing
-every frame, llama.bend's token on one thread is 8 to 11% faster on this machine ([`NOTES.md`](NOTES.md),
-2026-11-12). I did not measure the other systems in that state, so the ratios above are for the still screen only.
+The one-thread numbers are the idle protocol's: nothing else running and the desktop still. With the desktop
+redrawing every frame (a notification replaced about 30 times a second; the panel on or off), llama.bend's token on
+one thread is 8 to 11% faster on this machine ([`NOTES.md`](NOTES.md), 2026-11-12). I did not measure the other
+systems in that state, so the ratios above are for the still desktop only.
 
 ## Other thread counts
 
