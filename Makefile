@@ -27,7 +27,7 @@ laws:             ## the package's proofs, checked by bend and again by the kern
 check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin
 	$(PY) reference/prep.py --check
 	mkdir -p .scratch
-	bend llama/tok.bend -o .scratch/tok
+	bend demo/tok.bend -o .scratch/tok
 	$(PY) reference/test_tok.py .scratch/tok
 	$(PY) reference/test_detok.py .scratch/tok
 	$(PY) reference/test_chat.py .scratch/tok
