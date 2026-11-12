@@ -80,19 +80,21 @@ def bm_join(-r: Nat, -c: Nat, p: BM<TA.half(r), c>, q: BM<Nat.sub(r, TA.half(r))
     case BM{bx, ox} BM{by, oy}:
       BM{TA.BNode{bx, by}, List.append(&1, Leaf, ox, oy)}
 
-# the two bands of a node run in parallel, each with its own copy of x (n·c numbers, small next to the weights), as
-# tensor-array's bmv does for one vector; xp is a pair of copies of x (a leaf uses one)
-def bmm(+c: Nat, -r: Nat, b: TA.Bands<r, c>, +rr: Nat, -e: {rr == r : Nat}, +n: Nat, xp: Array<F32> & Array<F32>) -> BM<r, c>:
-  match b xp:
-    case TA.BLeaf{m} Tuple{x, x2}:
+# the two bands of a node run in parallel, one with x and the other with a copy of it (n·c numbers, small next to
+# the weights): a band's product owns its operand, so every band needs its own. A fork with two copies in hand (as
+# tensor-array's bmv has them for one vector) would make a copy more than it uses at every node
+def bmm(+c: Nat, -r: Nat, b: TA.Bands<r, c>, +rr: Nat, -e: {rr == r : Nat}, +n: Nat, x: Array<F32>) -> BM<r, c>:
+  match b:
+    case TA.BLeaf{m}:
       bm_mat(r, c, rr, n, x, m)
-    case TA.BNode{bx, by} Tuple{x1, x2}:
-      p q = bmm(c, TA.half(r), bx, TA.half(rr), TA.eq_half(rr, r, e), n, Array.clone(F32, x1)) bmm(c, Nat.sub(r, TA.half(r)), by, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), n, Array.clone(F32, x2))
-      bm_join(r, c, p, q)
+    case TA.BNode{bx, by}:
+      with2(BM<r, c>, Array.clone(F32, x), x1 => x2 =>
+        p q = bmm(c, TA.half(r), bx, TA.half(rr), TA.eq_half(rr, r, e), n, x1) bmm(c, Nat.sub(r, TA.half(r)), by, Nat.sub(rr, TA.half(rr)), TA.eq_rest(rr, r, e), n, x2)
+        bm_join(r, c, p, q))
 
 # W (r x c, in bands) times the n rows of x (n x c): the bands handed back and every band's results
 def mm(+r: Nat, +c: Nat, b: TA.Bands<r, c>, +n: Nat, x: Array<F32>) -> BM<r, c>:
-  bmm(c, r, b, r, {==}, n, Array.clone(F32, x))
+  bmm(c, r, b, r, {==}, n, x)
 
 # one band's column: its numbers from idx down in steps of nu, consed onto acc, so they come out in row order
 def col(mleft: Nat, +idx: U32, +nu: U32, acc: List<&2, F32>, rc: Array<F32> & F32) -> TA.AL:
