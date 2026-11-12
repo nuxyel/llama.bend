@@ -5,8 +5,8 @@ after five quiet minutes: load 0.06, the one open agent session idle at 0.6% of 
 mains power in the `performance` profile: Intel Core Ultra 7 155H (6 performance cores with two threads, 8 efficiency
 cores, 2 low-power cores; 22 threads), 32 GB, Linux 7.2.8, clang 23.1.3. llama.bend at `a76390e`, built with Bend
 2.0.40, its pin, with `bend-ml-tensor-array@0.1.20.0`, `bend-ml-binary-read@0.2.0.1` and
-`bend-ml-bpe-tokenizer@0.1.3.0`; the commits after it change neither one thread nor 16 (the band depth's rule, in
-"Other thread counts" below). "1 thread" is one process pinned to a performance core (`taskset -c 3`) with every
+`bend-ml-bpe-tokenizer@0.1.3.0`; the commits after it change neither one thread nor 16 in what these tables measure
+(the band depth's rule and the prompt's pass, in their sections below). "1 thread" is one process pinned to a performance core (`taskset -c 3`) with every
 thread setting at 1; "16 threads" is unpinned with every setting at 16. The cases ran in alternated, shuffled rounds
 (5 for the 135M and 360M, 3 for the 1.7B, 2 for the 512-token runs); the numbers are medians.
 
@@ -78,6 +78,27 @@ narrower than 1024 on 3 to 8 threads. Before it two threads ran on one core (76.
 it the two small models are 9 and 10% faster on 4 threads and 7 and 2% faster on 8. The comparison, cell by cell, is in
 [`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in [`bench/2026-11-12-band-depth/`](bench/2026-11-12-band-depth/).
 I did not measure the other systems on these counts.
+
+## The prompt: time to the first token
+
+The tables above leave the prompt out. Since `4770462` a prompt runs through each layer in one pass
+(`llama/prompt.bend`), with the bits of the position-by-position path before it (`250bc14`). llama.bend alone, in
+an idle round on 2026-11-12 (12:42 to 13:05): seconds from the start of the prompt to the first new token, medians
+of 5 alternated rounds (3 for the 1.7B), every pair of ranges far apart.
+
+| model, prompt | 1 thread, before → now | 16 threads, before → now |
+|---|---|---|
+| SmolLM2-135M, 56 tokens | 3.51 → 1.12 | 2.71 → 1.03 |
+| SmolLM2-135M, 77 tokens | 4.73 → 1.54 | 3.86 → 1.41 |
+| SmolLM2-360M, 56 tokens | 9.17 → 2.91 | 5.11 → 1.79 |
+| SmolLM2-360M, 77 tokens | 12.7 → 3.94 | 7.20 → 2.50 |
+| SmolLM2-1.7B, 25 tokens | 21.1 → 6.79 | 6.27 → 2.41 |
+| SmolLM2-1.7B, 77 tokens | 65.4 → 18.0 | 20.8 → 7.28 |
+
+3.1 to 3.6 times faster on one thread and 2.6 to 2.9 times on 16. The pass gains little from threads on the two
+small models, which are fastest on 4 (0.78 s and 1.59 s for the 56 tokens). I did not measure the other systems'
+time to the first token. The rest is in [`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in
+[`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/).
 
 ## Longer generations: 512 tokens
 
