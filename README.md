@@ -77,7 +77,9 @@ All against `transformers` 5.19 in F32 with eager attention, by the scripts in [
 | 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
 
 The instruct checkpoints run on the same package and pass the same tests, and answer a chat turn as `transformers`
-does (`generate` over `apply_chat_template`'s ids, stopping after `<|im_end|>`):
+does (`generate` over `apply_chat_template`'s ids, stopping after `<|im_end|>`). A conversation of several turns keeps
+its caches, so a turn runs its own ids and nothing before them, and every answer is still the one `transformers`
+generates from the whole conversation:
 
 | | SmolLM2-135M-Instruct | SmolLM2-360M-Instruct | SmolLM2-1.7B-Instruct |
 |---|---|---|---|
@@ -85,6 +87,7 @@ does (`generate` over `apply_chat_template`'s ids, stopping after `<|im_end|>`):
 | argmax at each of the 88 positions | the same | the same | the same |
 | 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
 | one chat turn: the template's ids, up to 32 greedy tokens and the decoded text (12 messages) | identical | identical | identical |
+| three conversations of three turns, the caches kept: at every turn the conversation's ids, up to 24 greedy tokens and the answer's text | identical | identical | identical |
 
 The tokenizer is written in Bend too (SmolLM2's digit split, the GPT-2 regex and 48,900 merges). It gives the same ids
 as `tokenizers` on 68 fixed texts and 600 random ones, and decodes like it on 1,500 random id sequences, most of them
@@ -147,12 +150,16 @@ bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 
 ./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
 make prep MODEL=smollm2-135m-instruct   # the instruct checkpoint (270 MB)
 ./gen data/smollm2-135m-instruct --chat "What is the capital of France?" 32   # one user turn: "The capital of France is Paris."
+./gen data/smollm2-135m-instruct --chat - 64   # a conversation: type a turn after "> ", read the answer as it is written; Ctrl-D ends it
 ```
 
 Greedy is the default and `temperature 0` is greedy too. A seed gives the same tokens on every run, on one thread as
 on all of them (nothing is kept between draws). `--chat` wraps the prompt in SmolLM2-Instruct's template (default system message, then the user turn, then the
 assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well. It is for the
-instruct checkpoints: a base model only continues the template's text.
+instruct checkpoints: a base model only continues the template's text. With `-` in place of the message, every line
+of the standard input is a user turn of one conversation. The caches stay between the turns: a turn's ids go
+through the layers in one pass on top of them and the answer follows, so the conversation before it is never run
+again. It ends with the input, or when the caches are full (2048 positions, or `GEN_CTX`).
 
 The runtime uses every hardware thread unless told otherwise, and that is not always the fastest count. On my
 machine (6 performance cores, 22 threads) the 135M is fastest on 8 threads, 16% faster than on 16 and 20% faster than
@@ -201,9 +208,11 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
   generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
   `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host
   memory (2026-11-01, Bend 2.0.39).
-- One chat turn. `--chat` sends one user message after the template's default system message; a conversation of
-  several turns, or a system message of one's own, is not in `gen` yet (the template in Bend takes both:
-  `reference/test_chat.py`). Sampling matches its Python twin, not `transformers`' own
+- A conversation ends when its caches are full (2048 positions unless `GEN_CTX` says otherwise): nothing is dropped
+  from its start to make room. It keeps the ids it ran, where `transformers` would encode each answer's text again;
+  on the instruct checkpoints the two are the same ids at every turn tested, and a base model's continuations do
+  not always encode back. `--chat` sends the template's default system message; one's own is not in `gen` yet (the
+  template in Bend takes it: `reference/test_chat.py`). Sampling matches its Python twin, not `transformers`' own
   sampler (whose random numbers are PyTorch's); it runs on the CPU path only (`gen_gpu.bend` stays greedy), needs a
   top-k (k >= 1), and its cost grows with k (not timed yet). A special token written inside a chat message is encoded
   as text. The vectors between layers are lists whose length is not in their type, and the numerics are tested, never
@@ -215,7 +224,7 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 |---|---|
 | [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the prompt in one pass (`prompt.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`; `bend-ml-llama@0.2.1.1` on BendHub is `main.bend` alone); beside them, the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
-| [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
+| [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, a chat turn or a conversation), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
 | [`tests/`](tests/) | programs that must not compile |
 | [`reference/`](reference/) | download and preparation, the `transformers` and `tokenizers` oracles, the tests |
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |
