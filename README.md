@@ -116,6 +116,11 @@ faster and 16 threads are the same: the 135M went from 118 to 76 ms per token on
 (`bend-ml-tensor-array@0.1.19.0`); the rest is Bend 2.0.40 and generation no longer keeping the activations it never
 reads.
 
+A prompt runs through each layer in one pass (`llama/prompt.bend`), with the bits of the position-by-position path
+it replaced: the first token of a 77-token prompt comes after 1.5 s on the 135M on one thread (4.7 s before), 3.9 s
+on the 360M (12.7 s) and 18 s on the 1.7B (65 s); on 16 threads after 1.4, 2.5 and 7.3 s (3.9, 7.2 and 20.8). I did
+not measure the other systems' time to the first token.
+
 16 threads is not the fastest count for the two small models. On 8 threads the 135M takes 45.7 ms per token and on 4
 the 360M takes 89.5, against 54.6 and 99.6 on 16; two threads now use two bands (52.2 ms on the 135M, where they used
 to run on one core at 76.3). The table from 1 to 22 threads is in [`BENCHMARK.md`](BENCHMARK.md), and section 05
@@ -208,7 +213,7 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 | Path | What |
 |---|---|
-| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`; `bend-ml-llama@0.2.1.1` on BendHub is `main.bend` alone); beside them, the fast loader the demos use (`load.bend`) |
+| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the prompt in one pass (`prompt.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`; `bend-ml-llama@0.2.1.1` on BendHub is `main.bend` alone); beside them, the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
 | [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
 | [`tests/`](tests/) | programs that must not compile |
