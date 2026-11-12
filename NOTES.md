@@ -1821,10 +1821,25 @@ the caches stay between the turns.
   `IO.write` writes reaches a terminal only when the runtime next waits, so each piece is followed by
   `IO.sleep(0)`. `GEN_TRACE=1` prints the lines the tests read, `GEN_CTX` sets the room (2048 positions by default)
   and `GEN_IDS=1` reads a prompt as ids, which is how the tests run a whole conversation as one prompt.
-- **Time**, a diagnosis on a busy machine and not a result yet: in the first conversation the second turn's first
-  token comes after 0.39 s on the 135M-Instruct on one thread, against 1.18 s for the conversation as one prompt,
-  and the third turn's after 0.49 s against 1.69 s; on the 1.7B-Instruct on 16 threads, 1.97 s against 5.29 s and
-  2.49 s against 7.90 s. About three times sooner, with a quarter of the ids to run.
+- **Time**, in an idle round (18:57 to 19:11, nobody at the machine), at `e0c785d`: ms from a turn's line to the
+  first token of its answer, with the caches kept → with the conversation so far run again as one prompt; medians of
+  5 alternated rounds (3 for the 1.7B). The first conversation's turns have 37, 15 and 19 ids of their own and the
+  third's 52, 17 and 13; a later turn's prompt is the whole conversation, 59 and 85 ids, 93 and 130.
+
+  | model, threads | conversation 1: turn 2 | turn 3 | conversation 3: turn 2 | turn 3 |
+  |---|---|---|---|---|
+  | 135M-Instruct, 1 | 389 → 1169 | 487 → 1674 | 466 → 1836 | 391 → 2602 |
+  | 135M-Instruct, 16 | 318 → 777 | 407 → 1087 | 390 → 1203 | 331 → 1743 |
+  | 360M-Instruct, 1 | 1005 → 3004 | 1223 → 4273 | 1186 → 4654 | 1012 → 6500 |
+  | 360M-Instruct, 16 | 561 → 1579 | 739 → 2281 | 712 → 2481 | 624 → 3507 |
+  | 1.7B-Instruct, 16 | 1909 → 4763 | 2461 → 7224 | | |
+
+  A later turn answers 2.4 to 6.7 times sooner with the caches kept, every pair of ranges far apart. A first turn
+  has nothing to keep, and it came 49 to 104 ms later than the same ids as one prompt: the conversation's clock
+  starts before the turn's text is encoded, and the one-prompt runs were given their ids. Timed alone afterwards (a
+  diagnosis), the tokenizer takes 53 and 89 ms for these two first turns and 16 to 21 ms for a later one, so the
+  later turns' numbers carry that much encoding too. Raw rows:
+  [`bench/2026-11-12-chat-turns/`](bench/2026-11-12-chat-turns/).
 - **Checks** on a busy machine: `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures each, the
   laws with `--verdict` on the package's six files among them), `make bits` on 22 threads and on one (23 outputs
   identical), `test_chat_turns.py` on the 360M-Instruct and on the 1.7B-Instruct, bend-lint with 0 findings.
