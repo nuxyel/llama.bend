@@ -1679,3 +1679,36 @@ to copy about 1,000 lines from `demo/`: the tokenizer, the chat template and the
   `U32.add_comm`. Keeping the tagged byte in that piece would make the statement true on the tagged list without
   changing an id; the proof would still need "every piece is non-empty" for the fuel of `split`, over the five kinds of
   piece. Left for a session of its own.
+
+## The prompt's positions without the activations on one band (2026-11-12)
+
+`forward_pre` runs the prompt's positions, whose logits nobody reads. On one band it still kept every layer's
+activations, as `forward_gen` did until `a76390e`; it now leaves them empty there too (`layers(False{}, ..)`). The
+ids and logit bits do not move: `make check`, `make bits` on 22 threads and on one (23 outputs identical), and the
+twelve chat turns, whose prompts are 33 to 52 ids, on the three instruct checkpoints on one thread (0 failures).
+
+- **Measured** in a third idle round (09:57 to 10:08, nobody at the machine), `83e1125` against `961308b`, one thread
+  pinned to a performance core: ms from the start of the prompt to the first new token, with 56 prompt ids on the
+  135M and the 360M and 25 on the 1.7B, in eight interleaved blocks, the desktop still in five and redrawing every
+  frame in three (the notification of the entry on the generated positions), as median and range:
+
+  | model, prompt ids | desktop | kept | left empty | time | instructions |
+  |---|---|---|---|---|---|
+  | 135M, 56 | still | 3476 (3408-3555) | 3460 (3346-3500) | -0.5% | -2.9% |
+  | 135M, 56 | redrawing | 3304 (3269-3312) | 3095 (3041-3100) | -6.3% | |
+  | 360M, 56 | still | 9073 (8965-9283) | 9003 (8624-9013) | -0.8% | -1.9% |
+  | 360M, 56 | redrawing | 9170 (9151-9186) | 8737 (8631-8809) | -4.7% | |
+  | 1.7B, 25 | still | 21648 (20906-21921) | 20918 (20730-21318) | -3.4% | -0.8% |
+  | 1.7B, 25 | redrawing | 20369 (20158-20536) | 17929 (17927-17999) | -12.0% | |
+
+  With the desktop still every pair of ranges overlaps; with it redrawing they are apart on the three. The control,
+  the 135M on 16 threads, where both programs run the same code: 2666 and 2707 ms, the ranges overlapping.
+- So it is the generated positions' picture again: fewer instructions, no time I can measure on a quiet machine,
+  5 to 12% on a machine whose desktop is at work, and never slower. I claim no number for the quiet machine.
+- **It is not the panel.** The entry on the generated positions says "the screen changing". In this round the panel
+  was off, the display driver raised no interrupt in any run (about 11,400 a block in the round before), and the same
+  notification had the same effect: the 1.7B's program with the activations empty took 87 G cycles with the desktop
+  redrawing and 102 to 104 G with it still, for the same instructions. What makes the difference is the desktop's
+  processes, the compositor and the notification server, at work on other cores for every frame, with the panel on
+  or off. I still do not know what in the processor it changes.
+- Raw rows: [`bench/2026-11-12-activations/prompt.tsv`](bench/2026-11-12-activations/prompt.tsv).
