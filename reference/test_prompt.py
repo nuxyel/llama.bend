@@ -28,11 +28,11 @@ CASES = [
 
 
 def run(args, threads, seq):
-    env = dict(os.environ, BENDRTS=f"--threads {threads}", BEND_NO_TELEMETRY="1")
+    env = dict(os.environ, BEND_NO_TELEMETRY="1")
     env.pop("GEN_SEQ", None)
     if seq:
         env["GEN_SEQ"] = "1"
-    r = subprocess.run([EXE, D] + args + [str(N_NEW)], capture_output=True, cwd=ROOT, env=env)
+    r = subprocess.run([EXE, "+RTS", "--threads", str(threads), "-RTS", D] + args + [str(N_NEW)], capture_output=True, cwd=ROOT, env=env)
     out = r.stdout.decode("utf-8", "replace")
     ids = re.search(r"^prompt ids: (.*)$", out, re.M)
     toks = re.findall(r"^  id (\d+)  logit (\d+) ", out, re.M)
