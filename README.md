@@ -121,8 +121,11 @@ reads.
 
 A prompt runs through each layer in one pass (`llama/prompt.bend`), with the bits of the position-by-position path
 it replaced: the first token of a 77-token prompt comes after 1.5 s on the 135M on one thread (4.7 s before), 3.9 s
-on the 360M (12.7 s) and 18 s on the 1.7B (65 s); on 16 threads after 1.4, 2.5 and 7.3 s (3.9, 7.2 and 20.8). I did
-not measure the other systems' time to the first token.
+on the 360M (12.7 s) and 18 s on the 1.7B (65 s); on 16 threads after 1.0, 2.0 and 6.4 s (3.9, 7.2 and 20.8). In a
+conversation the caches stay, and a later turn's first token comes 2.4 to 6.7 times sooner than from the
+conversation run again: a second turn answers after 0.32 s on the 135M-Instruct on 16 threads instead of 0.78 s,
+and after 1.9 s on the 1.7B-Instruct instead of 4.8 s. I did not measure the other systems' time to the first
+token.
 
 16 threads is not the fastest count for the two small models. On 8 threads the 135M takes 45.7 ms per token and on 4
 the 360M takes 89.5, against 54.6 and 99.6 on 16; two threads now use two bands (52.2 ms on the 135M, where they used
