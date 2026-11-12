@@ -137,6 +137,12 @@ Greedy is the default and `temperature 0` is greedy too. A seed gives the same t
 on all of them (nothing is kept between draws). `--chat` wraps the prompt in SmolLM2-Instruct's template (default system message, then the user turn, then the
 assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well.
 
+The runtime uses every hardware thread unless told otherwise, and that is not always the fastest count. On my
+machine (6 performance cores, 22 threads) the 135M is fastest on 8 threads, 16% faster than on 16 and 20% faster than
+on all 22; the 360M on 4, 10% and 15% faster; the 1.7B wants 12 or more ([`NOTES.md`](NOTES.md), 2026-11-12). Runtime
+options go between `+RTS` and `-RTS`, before the program's arguments:
+`./gen +RTS --threads 8 -RTS data/smollm2-135m "Once upon a time" 32`.
+
 The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
 Every loader reads the downloaded `model.safetensors` itself, so `make prep` writes no copy of the weights;
 `make prep F32=1` also writes the F32 copies (`w/<name>.bin`, 6.4 GB for the 1.7B) that `bend-ml-llama@0.2.0.0`'s
