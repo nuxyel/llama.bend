@@ -20,8 +20,9 @@ and in this file's git history.
 
 ## 2. No regression
 
-1. `make laws`: the checker and `--verdict`, both `ALL PROOFS CHECK`, no `@unsafe`, no `?TODO`, both
-   `tests/bad_*.bend` rejected with their own error, `main.bend` free of foreign code.
+1. `make laws`: the checker and `--verdict` on every file of the package, each `ALL PROOFS CHECK`, no `@unsafe`, no
+   `?TODO`, both `tests/bad_*.bend` rejected with their own error, the package free of foreign code and whole in its
+   entry (`llama/package.bend`).
 2. `make check` on the 135M: prep, the tokenizer against `tokenizers`, the layer test, the forward pass and the
    twelve generations against `transformers`, 0 failures, and the thread probe (1 thread on one core, 16 on several).
 3. `make bits`: every output of the 135M identical to the saved bits. A bump or a refactor that keeps the order of
@@ -54,8 +55,10 @@ republished only if their source changes, and llama.bend moves to a new pin only
    capability, a major only for a change in what the project is), and a GitHub release with the notes: what changed,
    what the checks reported, and whether `bend-ml-llama` changed.
 3. BendHub, only if `llama/` changed: `bend login` (GitHub), then from `llama/`:
-   `bend main.bend --publish bend-ml-llama@0.X.Y.Z` (12+ characters, four numbers, `LICENSE` next to `main.bend`, the
-   imports BendHub packages at pinned versions). Publishing is permanent; a signature change is a new version that
-   breaks callers. Then check the published package from a scratch directory: `import
-   bend-ml-llama@0.X.Y.Z/main.bend as M` and a forward pass on the 135M.
+   `bend package.bend --publish bend-ml-llama@0.X.Y.Z` (the entry, which imports every file of the package: `--publish`
+   sends it and what it imports; 12+ characters, four numbers, `LICENSE` next to it, the imports BendHub packages at
+   pinned versions). Publishing is permanent; a signature change is a new version that breaks callers. Then check the
+   published package from a scratch directory: `import bend-ml-llama@0.X.Y.Z/main.bend as M` and a forward pass on the
+   135M, and `demo/hello.bend` with its three imports pointed at `bend-ml-llama@0.X.Y.Z/`, which must print
+   `bench/expected-smollm2-135m.txt`'s tokens.
 4. Posts, if any: drafts prepared, Renan posts (X in English, LinkedIn in Portuguese).
