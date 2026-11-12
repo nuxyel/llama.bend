@@ -12,11 +12,13 @@ typed layers are the BendHub package `bend-ml-llama`; the repository is public s
 - `NOTES.md`: every finding, measurement and decision, by date. Read it before changing anything.
 - `llama/main.bend`: the typed package (future `bend-ml-llama`): `Cfg`, `LW<c>`, `Model<c>`, `KV<cap, t>`, `block`,
   `forward`, the loader (plain Bend, BF16 from `hf/model.safetensors` at `w/st.txt`'s offsets) and every law; `llama/README.md` explains the laws. `make laws` runs bend and `--verdict`.
-- `llama/tok.bend`, `llama/unicode.bend`, `llama/gen.bend`: the rest of the package (since 2026-11-12, not on BendHub
-  yet): SmolLM2's tokenizer and chat template (`Tables`, `load`, `encode`, `decode`, `chat`), its character classes, and
-  the generation loop (`Pick`, `tokens`, `generate`); `llama/README.md` lists their API. `llama/package.bend` is the
+- `llama/tok.bend`, `llama/unicode.bend`, `llama/prompt.bend`, `llama/gen.bend`: the rest of the package (since
+  2026-11-12, not on BendHub yet): SmolLM2's tokenizer and chat template (`Tables`, `load`, `encode`, `decode`,
+  `chat`), its character classes, the prompt in one pass (`forward_prompt`: every layer over all the prompt's
+  positions, the same bits as position by position; `reference/test_prompt.py` compares the two), and the generation
+  loop (`Pick`, `tokens`, `generate`); `llama/README.md` lists their API. `llama/package.bend` is the
   entry to publish: it imports every file of the package, because `--publish` sends the entry and what it imports.
-  `make laws` runs bend and `--verdict` on each of the five (the Makefile's `PKG`).
+  `make laws` runs bend and `--verdict` on each of the six (the Makefile's `PKG`).
 - `llama/load.bend`: the loader the demos use, the same model read from `hf/model.safetensors` (BF16, at `w/st.txt`'s
   offsets) with `bend-ml-binary-read` (foreign code, C and JS). Never import it, or binary-read, from a file of the
   package: `--verdict` would fail (`make laws` checks it).
