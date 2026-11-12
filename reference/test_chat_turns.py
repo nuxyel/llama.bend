@@ -12,6 +12,8 @@ For every conversation, on 1 and 16 threads, turn by turn:
 The two thread counts must print the same ids and logit bits. Then, in the same binary:
   - every turn again as one prompt, the whole conversation's ids run from nothing (GEN_IDS=1): the same answer ids
     and logit bits as with the caches kept;
+  - the first conversation sampled (temperature 1.5, top-k 50, top-p 1, seed 42, which leaves the greedy answers),
+    every answer against one prompt of the conversation so far with the same seed: the same ids and logit bits;
   - the first conversation as a person sees it (no GEN_TRACE): the answers' texts after `> `, written in pieces;
   - the first conversation with room for the first turn and three positions more (GEN_CTX): the answer is cut after
     four tokens, the same four, the program says the caches are full, and the next turn does not run;
@@ -23,6 +25,7 @@ from models import ROOT, D, T_DIR
 
 EXE = sys.argv[1]
 TOL = 2e-4
+SAMPLING = ["1.5", "50", "1.0", "42"]        # temperature, top-k, top-p, seed: hot enough to leave the greedy path
 failures = 0
 
 
@@ -106,10 +109,28 @@ def main():
                   f"  turn {j + 1} as one prompt of {len(ref['ids'])} ids: the same answer ids and logit bits",
                   f"with the caches: {t['gen']} {t['bits']}\n  as one prompt:   {got[0]} {got[1]}\n{err[-500:]}")
 
-    # as a person sees it
     conv = convs[0]
     n, refs = conv["n"], conv["turns"]
     stdin = ("\n".join(t["message"] for t in refs) + "\n").encode("utf-8")
+
+    # sampled: every answer of the conversation against one prompt of the conversation so far, with the same seed
+    code, out, err = run(["--chat", "-", str(n)] + SAMPLING, stdin=stdin, env={"GEN_TRACE": "1"})
+    turns = turns_of(out) if code == 0 else None
+    if check(turns is not None and len(turns) == len(refs), "conversation 1, sampled " + " ".join(SAMPLING),
+             (out + err)[-1500:]):
+        ran, pend = [], []
+        for j, t in enumerate(turns):
+            ran += pend + t["ids"]
+            code, out, err = run(["--chat", " ".join(str(i) for i in ran), str(n)] + SAMPLING, env={"GEN_IDS": "1"})
+            toks = re.findall(r"^  id (\d+)  logit (\d+) ", out, re.M)
+            got = ([int(i) for i, _ in toks], [int(b) for _, b in toks])
+            check(code == 0 and got == (t["gen"], t["bits"]),
+                  f"  turn {j + 1}, sampled: {len(t['gen'])} tokens, the same ids and logit bits as one prompt of "
+                  f"{len(ran)} ids", f"with the caches: {t['gen']} {t['bits']}\n  as one prompt:   {got[0]} {got[1]}")
+            ran += t["gen"][:-1]
+            pend = [] if not t["gen"] or t["gen"][-1] in (0, 2) else t["gen"][-1:]
+
+    # as a person sees it
     code, out, err = run(["--chat", "-", str(n)], stdin=stdin)
     want = "".join("> " + t["answer"] + "\n" + ("" if t["gen"][-1] in (0, 2) else f"(stopped at {n} tokens)\n")
                    for t in refs) + "> "
