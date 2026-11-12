@@ -1,4 +1,5 @@
-"""SmolLM2 tokenizer in Bend (demo/tok.bend) against `tokenizers`. Adapted from bend-ml's reference/test_gpt2_tok.py."""
+"""SmolLM2 tokenizer in Bend (llama/tok.bend, through demo/tok.bend's command line) against `tokenizers`. Adapted from
+bend-ml's reference/test_gpt2_tok.py."""
 import os, subprocess, sys, tempfile, time
 from tokenizers import Tokenizer
 
