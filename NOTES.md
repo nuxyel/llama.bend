@@ -1957,3 +1957,33 @@ so I measured it.
 - **One machine.** Which CPUs are the fast ones is the machine's (`lscpu -e` lists them), and I have not measured
   another processor. Nothing in the program changes: each model's 45 runs give the same ids and logit bits.
 - Raw rows: [`bench/2026-11-12-performance-cores/`](bench/2026-11-12-performance-cores/).
+
+## v1.6.0 and bend-ml-llama 0.3.0.0 (2026-11-12)
+
+- **What it holds**, since v1.5.2 (the entries above, all of 2026-11-12): generation and the prompt's positions
+  without the activations on one band; the band depth by thread count and width; the three instruct checkpoints;
+  the tokenizer, the chat template and the generation loop as files of the package; the prompt in one pass; a
+  conversation that keeps its caches; the pass's heads in sequence; and the README and `BENCHMARK.md` measured again
+  on an idle machine.
+- **A minor** by bend-ml's `docs/VERSIONING.md`: a conversation, the prompt in one pass and the instruct checkpoints
+  are new capabilities.
+- **Published `bend-ml-llama@0.3.0.0`**, hash `0xf3d14d7bad8726b73c5072bce72b710c`, from `llama/package.bend`: 8 files,
+  178,694 bytes (the entry, `main.bend`, `unicode.bend`, `tok.bend`, `prompt.bend`, `gen.bend`, the `LICENSE` and the
+  README). Up to 0.2.1.1 the package was `main.bend` alone. The third number would have been enough for new API; I
+  moved the second because the package changes what it is for (from the model to a prompt's tokens) and one helper
+  of `main.bend` changed its signature (`depth_sel`; `depth_in` is new). The rest of `main.bend`'s signatures are
+  0.2.1.1's, with two changes in what they do: generation and the prompt's positions leave the activations empty on
+  any band depth, and the loader's depth follows the thread count and the model's width.
+- **Checked from a folder outside the repository**, with nothing in it but the two programs: `demo/hello.bend` with
+  its three imports pointed at `bend-ml-llama@0.3.0.0/` prints `transformers`' 128 tokens for "Once upon a time" on
+  the 135M (`reference/test_hello.py`, 0 failures); `demo/forward.bend` on the published `main.bend` with its own
+  plain-Bend loader passes `reference/test_forward.py` on the 135M (11 prompts, 0 failures, logits within 1.04e-5 of
+  `transformers`, the same argmax) and prints, byte for byte, what the repository's `forward` prints with
+  `load.bend` (7,372,549 bytes on `fwd0`'s ids). The READMEs import 0.3.0.0.
+- **The checklist** (`docs/release.md`, section 2) on `fd413a4`, whose code is the release's, Bend 2.0.40, a busy
+  machine: `make laws` (`ALL PROOFS CHECK` from bend and from `--verdict` on the package's six files, both bad
+  programs rejected with their own error); `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures
+  each; the thread probe on 1.00 and 6.95 cores); `make bits` on 22 threads and on one (23 outputs identical);
+  `test_gen.py` and `test_prompt.py` on the 360M and on the 1.7B; `test_chat_gen.py` and `test_chat_turns.py` on the
+  360M-Instruct and on the 1.7B-Instruct; the emitted C has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
+  bend-lint 0.2.2: 0 findings, 14 suppressed.
