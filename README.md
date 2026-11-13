@@ -181,7 +181,9 @@ loader reads.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
-import bend-ml-llama@0.2.1.1/main.bend as M
+import bend-ml-llama@0.3.0.0/main.bend as M   # config, layers, model, loader, laws
+import bend-ml-llama@0.3.0.0/tok.bend as K    # the tokenizer and the chat template
+import bend-ml-llama@0.3.0.0/gen.bend as G    # generation, and a conversation that keeps its caches
 ```
 
 `make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
@@ -228,7 +230,7 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 | Path | What |
 |---|---|
-| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the prompt in one pass (`prompt.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`; `bend-ml-llama@0.2.1.1` on BendHub is `main.bend` alone); beside them, the fast loader the demos use (`load.bend`) |
+| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the prompt in one pass (`prompt.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`), on BendHub as `bend-ml-llama@0.3.0.0`; beside them, the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
 | [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, a chat turn or a conversation), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
 | [`tests/`](tests/) | programs that must not compile |
