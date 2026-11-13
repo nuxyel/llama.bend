@@ -11,13 +11,13 @@ PyTorch: all three models give the same greedy tokens as `transformers` in the
 - Bend: **2.0.40** · License: MIT · Depends on `bend-ml-tensor-array@0.1.20.0`.
 - `bend llama/main.bend --verdict` → `ALL PROOFS CHECK` (no `@unsafe`, no `?TODO`, no axioms).
 
-On BendHub as `bend-ml-llama@0.2.1.1`. A local copy works the same way (`import ./llama/main.bend as M`, as the
+On BendHub as `bend-ml-llama@0.3.0.0`. A local copy works the same way (`import ./llama/main.bend as M`, as the
 programs in `demo/` do with `../llama/main.bend`).
 
 ```python
 import Base
 import bend-ml-tensor-array@0.1.20.0/main.bend as TA
-import bend-ml-llama@0.2.1.1/main.bend as M
+import bend-ml-llama@0.3.0.0/main.bend as M
 
 # one position: token tok at position t, with the caches of positions 0..t-1 (one per layer) and room for cap
 # positions; room is the proof that t < cap (M.step_room gives it to a loop that keeps t + steps left = cap)
@@ -88,8 +88,8 @@ An `Array` has a single owner, so every product hands its matrix back (`block` r
 
 ## The tokenizer and generation
 
-Since 2026-11-12 the package holds what a program needs to go from a prompt to tokens, in files of their own beside
-`main.bend`. They are in the repository and not on BendHub yet: `bend-ml-llama@0.2.1.1` is `main.bend` alone.
+Since 0.3.0.0 the package holds what a program needs to go from a prompt to tokens, in files of their own beside
+`main.bend`; up to 0.2.1.1 it was `main.bend` alone.
 
 | File | What |
 |---|---|
@@ -101,9 +101,9 @@ Since 2026-11-12 the package holds what a program needs to go from a prompt to t
 
 ```python
 import Base
-import ./llama/main.bend as M
-import ./llama/tok.bend as K
-import ./llama/gen.bend as G
+import bend-ml-llama@0.3.0.0/main.bend as M
+import bend-ml-llama@0.3.0.0/tok.bend as K
+import bend-ml-llama@0.3.0.0/gen.bend as G
 
 # n greedy tokens after a prompt, one id per line (dir: a model directory prepared by llama.bend's reference/prep.py)
 def run(+dir: String, prompt: String, n: Nat) -> IO(Unit):
