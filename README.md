@@ -233,11 +233,17 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |
 | [`NOTES.md`](NOTES.md) | every finding, measurement and decision, by date |
 | [`docs/plan.md`](docs/plan.md), [`docs/bendtorch.md`](docs/bendtorch.md) | the milestones; what a backward pass would need |
+| [`docs/upstream/`](docs/upstream/) | the programs behind my open `bendlang/bend` issues |
 
 ## Upstream
 
 While building bend-ml I found that a parallel let became sequential when its def's last parameter was erased
 ([bendlang/bend#1374](https://github.com/bendlang/bend/issues/1374)). My fix,
 [#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.40.
+
+Getting the prompt's pass to use its threads, I measured what a small parallel let costs on many of them: the
+runtime wakes every worker thread for it, and the sequential code after it runs slower
+([bendlang/bend#2141](https://github.com/bendlang/bend/issues/2141), open). The program that shows it is in
+[`docs/upstream/`](docs/upstream/); the pass runs those lets in sequence since then.
 
 <p align="center"><sub>MIT · Renan Vinícius (@nuxyel) · the visual identity is bend-ml's, in Bend's own colours · the launch video (v1.0): <a href="https://github.com/nuxyel/llama.bend/releases/download/v1.0.0/llama.bend.mp4">llama.bend.mp4</a></sub></p>
