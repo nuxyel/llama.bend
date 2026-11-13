@@ -1925,3 +1925,35 @@ the other), and reported it as [bendlang/bend#2141](https://github.com/bendlang/
   difference. It also fits what the thread counts show for a token: its 211 products each pay a let's floor, which
   grows with the threads, and the list work between them runs slower on many threads than on one. The next entry
   measures the part of that a command can remove.
+
+## Threads on the performance cores (2026-11-12)
+
+The code after a fork goes on in whichever thread took it, so on a processor with two kinds of cores a part of a
+token's sequential work can land on the slow ones. Keeping the process on the fast ones is one command (`taskset`),
+so I measured it.
+
+- **Measured** in the second idle round (20:46 to 20:52, nobody at the machine), `e0c785d`, a 56-id prompt and 33
+  new tokens: ms a token after the first, and ms to the first token, medians of 5 alternated rounds. My machine has
+  six performance cores with two threads each (CPUs 0-11), eight efficiency cores (12-19) and two low-power ones.
+
+  | CPUs, threads | 135M: a token | first token | 360M: a token | first token |
+  |---|---|---|---|---|
+  | any, 4 | 44.4 | 648 | 91.8 | 1478 |
+  | any, 8 | 45.8 | 720 | 89.6 | 1536 |
+  | any, 12 | 53.0 | 692 | 95.7 | 1353 |
+  | any, 16 | 54.9 | 725 | 100.3 | 1492 |
+  | any, 22 | 57.9 | 673 | 109.0 | 1412 |
+  | four performance cores (`taskset -c 0,2,4,6`), 4 | 44.2 | 655 | 86.6 | 1447 |
+  | the six of them (`taskset -c 0,2,4,6,8,10`), 6 | 46.2 | 637 | 92.0 | 1425 |
+  | their twelve threads (`taskset -c 0-11`), 8 | 42.7 | 641 | 81.9 | 1429 |
+  | their twelve threads, 12 | 48.7 | 665 | 90.0 | 1436 |
+
+- **A token.** 8 threads on the performance cores' twelve are the fastest on both models: 42.7 ms against 45.8 for
+  8 threads left to the system on the 135M (the ranges apart: 42.6 to 43.0 and 45.5 to 46.4), and 81.9 against 89.6
+  on the 360M (81.6 to 82.1 and 89.0 to 90.3): 7% and 9% less, and 26% and 25% less than the 22 threads the runtime
+  takes when nothing is asked.
+- **The first token** gains less, and not everywhere: 641 against 720 ms for 8 threads on the 135M, where 4 threads
+  left to the system take 648; on the 360M, 12 threads left to the system are the fastest (1353 ms).
+- **One machine.** Which CPUs are the fast ones is the machine's (`lscpu -e` lists them), and I have not measured
+  another processor. Nothing in the program changes: each model's 45 runs give the same ids and logit bits.
+- Raw rows: [`bench/2026-11-12-performance-cores/`](bench/2026-11-12-performance-cores/).
