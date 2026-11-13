@@ -5,6 +5,9 @@ export MODEL ?= smollm2-135m
 DIR := data/$(MODEL)
 export PATH := $(HOME)/.bend/bin:$(HOME)/.elan/bin:$(PATH)
 PY := reference/.venv/bin/python
+# the files of bend-ml-llama: the entry to publish (package.bend) and what it imports. load.bend (foreign code) and
+# gpu.bend (an unsafe primitive of Base) stay outside
+PKG := llama/main.bend llama/unicode.bend llama/tok.bend llama/prompt.bend llama/gen.bend llama/package.bend
 
 .PHONY: setup prep laws check bits bench bench-gpu media lint
 
@@ -14,17 +17,17 @@ setup:            ## install the pinned Bend and Lean if missing, create the Pyt
 prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, under 1 MB written); F32=1: also the F32 copies that bend-ml-llama 0.2.0.0 reads (135M: 540 MB, 1.7B: 6.4 GB)
 	$(PY) reference/prep.py
 
-laws:             ## the package's proofs, checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected, each with its own error; main.bend free of foreign code
+laws:             ## every file of the package checked by bend and again by the kernel proved in Lean (--verdict); tests/bad_*.bend rejected, each with its own error; the package free of foreign code and whole in its entry
 	$(PY) scripts/check_rts.py --self-test
 	$(PY) scripts/check_rts.py
 	! grep -n "@unsafe\|?TODO" llama/*.bend demo/*.bend tests/*.bend
-	! grep -n "binary-read" llama/main.bend
-	! grep -n "tensor-gpu\|gpu.bend" llama/main.bend llama/load.bend tests/*.bend
-	bend llama/main.bend
-	bend llama/main.bend --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK"
+	! grep -n "binary-read\|^import .*load\.bend\|^import \.\./" $(PKG)
+	! grep -n "tensor-gpu\|gpu.bend" $(PKG) llama/load.bend tests/*.bend
+	for f in $(filter-out llama/package.bend,$(PKG)); do grep -q "^import \./$${f#llama/} as " llama/package.bend || { echo "llama/package.bend does not import $$f: --publish would leave it out"; exit 1; }; done
+	for f in $(PKG); do echo "== $$f"; bend $$f && bend $$f --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK" || exit 1; done
 	scripts/check_rejected.sh
 
-check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; sampling against its Python twin
+check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; conversations of three turns, their caches kept, against transformers generating each turn from the whole conversation; the prompt in one pass against position by position; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
 	$(PY) reference/prep.py --check
 	mkdir -p .scratch
 	bend demo/tok.bend -o .scratch/tok
@@ -40,8 +43,17 @@ check: laws       ## the laws, prep, the Bend tokenizer and chat template agains
 	[ -f $(DIR)/test/gen.json ] || $(PY) reference/gen_ref.py
 	bend demo/gen.bend -o .scratch/gen
 	$(PY) reference/test_gen.py .scratch/gen
+	[ -f $(DIR)/test/chat_gen.json ] || $(PY) reference/chat_gen_ref.py
+	$(PY) reference/test_chat_gen.py .scratch/gen
+	[ -f $(DIR)/test/chat_turns.json ] || $(PY) reference/chat_turns_ref.py
+	$(PY) reference/test_chat_turns.py .scratch/gen
+	$(PY) reference/test_prompt.py .scratch/gen
 	bend demo/sample_test.bend -o .scratch/sample_test
 	$(PY) reference/test_sample.py .scratch/sample_test .scratch/gen
+	[ -f bench/expected-$(MODEL).txt ] || $(PY) reference/bench_ref.py
+	rm -rf .scratch/pkg && mkdir -p .scratch/pkg/llama .scratch/pkg/demo && cp $(PKG) .scratch/pkg/llama && cp demo/hello.bend .scratch/pkg/demo
+	bend .scratch/pkg/demo/hello.bend -o .scratch/hello
+	$(PY) reference/test_hello.py .scratch/hello
 	$(PY) scripts/rts_probe.py .scratch/gen $(DIR) "Once upon a time" 24
 
 bits:             ## forward and gen give the same bits as the saved ones ($(DIR)/test/bits/; `bits.py save` writes them)

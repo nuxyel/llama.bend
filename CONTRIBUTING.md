@@ -43,7 +43,10 @@ PR and show that `make check` still passes on the 135M; the 360M and 1.7B (`MODE
 - **Prove structure, test numbers.** Shapes, sizes and composition belong in the types and laws; `F32` results are
   checked against PyTorch / `transformers` by the scripts in `reference/`.
 - **Every proved law is explained in plain language** in [`llama/README.md`](llama/README.md).
-- `llama/main.bend` is published to BendHub as one file (`bend-ml-llama`), so it imports nothing local.
+- The package `bend-ml-llama` is the files that `llama/package.bend` imports (`main.bend`, `tok.bend`, `unicode.bend`,
+  `prompt.bend`, `gen.bend`). They import Base, BendHub packages at pinned versions and each other, and nothing else:
+  no file outside `llama/`, and neither `load.bend` nor `gpu.bend` (`make laws` checks it). A new file of the package
+  is added to `package.bend` and to the Makefile's `PKG`.
 
 ## Benchmarks
 

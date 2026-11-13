@@ -22,7 +22,7 @@ export default ({ frame, hbars, stats, table, C }) => {
   const slides = [];
 
   slides.push({ name: "title", html: frame({
-    kicker: "llama.bend v1.4",
+    kicker: "llama.bend v1.5",
     title: `Llama models in Bend 2, <span class="v">measured</span>`,
     body: `<div style="height:40px"></div>` + stats([
       { big: LAWS, label: "laws proved", sub: "checked again by the Lean kernel" },

@@ -6,12 +6,12 @@
   <a href="https://github.com/nuxyel/llama.bend/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nuxyel/llama.bend/ci.yml?branch=main&style=flat-square&label=ci&labelColor=4d4a44&color=7e9a5e" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-8b83b5?style=flat-square&labelColor=4d4a44" alt="MIT license"></a>
   <a href="https://bend-lang.com"><img src="https://img.shields.io/badge/Bend-2.0.40-8b83b5?style=flat-square&labelColor=4d4a44" alt="Bend 2.0.40"></a>
-  <img src="https://img.shields.io/badge/laws%20proved-21-7e9a5e?style=flat-square&labelColor=4d4a44" alt="21 laws proved">
+  <img src="https://img.shields.io/badge/laws%20proved-26-7e9a5e?style=flat-square&labelColor=4d4a44" alt="26 laws proved">
 </p>
 
 **llama.bend** runs Llama-architecture language models in [Bend 2](https://bend-lang.com): SmolLM2-135M, SmolLM2-360M
-and SmolLM2-1.7B, on the CPU, with the same greedy tokens as PyTorch (`transformers`). One typed package,
-[`llama/`](llama/), runs all three; only the config changes between them. Every weight matrix has its shape in its
+and SmolLM2-1.7B, base and instruct, on the CPU, with the same greedy tokens as PyTorch (`transformers`). One typed
+package, [`llama/`](llama/), runs all three sizes; only the config changes between them. Every weight matrix has its shape in its
 type, computed from that config, so a weight in the wrong place does not compile, and the structural guarantees
 (which key/value head each query head reads, that position t sees exactly positions 0..t, that the cache never writes
 past its room, that the weights cover the checkpoint) are laws that Bend's kernel checks. The package is on BendHub as
@@ -21,7 +21,7 @@ llama.bend is models and inference: loading the weights, the forward pass, the K
 Training them is out of its scope: that is [BendTorch](https://github.com/nuxyel/bendtorch)'s, which fine-tunes
 SmolLM2-135M and 360M against PyTorch in Bend 2.
 
-<p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.4: 21 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/01-title.webp" alt="llama.bend v1.5: 26 laws proved, 3 models in one package, 0 different tokens against transformers" width="90%"></p>
 
 ## 01 · A weight in the wrong place is a type error
 
@@ -76,6 +76,19 @@ All against `transformers` 5.19 in F32 with eager attention, by the scripts in [
 | argmax at each of the 88 positions | the same | the same | the same |
 | 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
 
+The instruct checkpoints run on the same package and pass the same tests, and answer a chat turn as `transformers`
+does (`generate` over `apply_chat_template`'s ids, stopping after `<|im_end|>`). A conversation of several turns keeps
+its caches, so a turn runs its own ids and nothing before them, and every answer is still the one `transformers`
+generates from the whole conversation:
+
+| | SmolLM2-135M-Instruct | SmolLM2-360M-Instruct | SmolLM2-1.7B-Instruct |
+|---|---|---|---|
+| logits, worst error relative to the largest logit (11 prompts) | 4.0e-6 | 1.4e-5 | 6.2e-5 |
+| argmax at each of the 88 positions | the same | the same | the same |
+| 32 greedy tokens and decoded text (12 prompts) | identical | identical | identical |
+| one chat turn: the template's ids, up to 32 greedy tokens and the decoded text (12 messages) | identical | identical | identical |
+| three conversations of three turns, the caches kept: at every turn the conversation's ids, up to 24 greedy tokens and the answer's text | identical | identical | identical |
+
 The tokenizer is written in Bend too (SmolLM2's digit split, the GPT-2 regex and 48,900 merges). It gives the same ids
 as `tokenizers` on 68 fixed texts and 600 random ones, and decodes like it on 1,500 random id sequences, most of them
 invalid UTF-8. SmolLM2-Instruct's chat template, written in Bend on that tokenizer, gives the same ids as `transformers`'
@@ -86,37 +99,45 @@ whose top-k candidates are also the top-k of `transformers`' logits for the same
 
 ## 04 · How it compares
 
-<p align="center"><img src="docs/media/deck/frames/02-vs-references.webp" alt="SmolLM2-1.7B, ms per token over 128 tokens: llama.cpp 326 and 102, transformers 238 and 125, candle 298 and 308, llama.bend 1233 and 297, on 1 and 16 threads" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/02-vs-references.webp" alt="SmolLM2-1.7B, ms per token over 128 tokens: llama.cpp 329 and 101, transformers 241 and 130, candle 298 and 300, llama.bend 869 and 294, on 1 and 16 threads" width="90%"></p>
 
 <p align="center"><img src="docs/media/deck/frames/03-three-models.webp" alt="ms per token for the three models on 1 and 16 threads, llama.bend next to transformers, llama.cpp and candle" width="90%"></p>
 
-<p align="center"><img src="docs/media/deck/frames/04-flat-cost.webp" alt="Over 512 tokens a token costs about the same: growth per cached position between 0.04 and 0.21 ms" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/04-flat-cost.webp" alt="Over 512 tokens a token costs about the same: growth per cached position between 0.03 and 0.15 ms" width="90%"></p>
 
-<p align="center"><img src="docs/media/deck/frames/05-startup.webp" alt="SmolLM2-1.7B, load and generate one token: llama.bend 5.1 s, the others 0.8 to 3.2 s; peak memory 6.8 GB, the lowest" width="90%"></p>
+<p align="center"><img src="docs/media/deck/frames/05-startup.webp" alt="SmolLM2-1.7B, load and generate one token: llama.bend 3.6 s, the others 0.8 to 3.5 s; peak memory 6.8 GB, the lowest" width="90%"></p>
 
-Every system generates the same tokens. On the 1.7B llama.bend is 3.8 times slower than llama.cpp on one thread and
-2.9 times on 16 (2026-11-01, Bend 2.0.39). Against the run of 2026-10-13 it is 17 to 31% faster per token on 16 threads,
-and about the same on one (2 to 4% faster on the 135M and 360M, 2.5% slower on the 1.7B: gaps within the spread
-between sessions). Loading the 1.7B takes 5 s (66 s
-before the loader moved to `bend-ml-binary-read`). The machine, the versions and every number are in
+Every system generates the same tokens. On the 1.7B llama.bend is 2.6 times slower than llama.cpp on one thread and
+2.9 times on 16; on the 135M, 3.2 and 3.9 times; on the 360M, 3.0 and 3.6 (2026-11-12, Bend 2.0.40, an idle machine).
+Loading the 1.7B and generating one token takes 3.6 s, about what `transformers` and candle take (66 s before the
+loader moved to `bend-ml-binary-read`). The machine, the versions and every number are in
 [`BENCHMARK.md`](BENCHMARK.md).
 
-Those numbers are v1.4.1's code. v1.5.0 moves to `bend-ml-tensor-array@0.1.19.0`, whose dot product is unrolled by
-four with the same bits: on one thread a token takes 17 to 30% less (135M 110 → 76 ms, 360M 270 → 195, 1.7B 1172 →
-974), and on 16 threads it is the same within the spread (-2% to +3%). Measured the same day on an idle machine, by the
-program's own clock, llama.bend alone; the method is in [`BENCHMARK.md`](BENCHMARK.md).
+Against the tables this page had until then (2026-11-01, v1.4.1's code on Bend 2.0.39), one thread is 29 to 36%
+faster and 16 threads are the same: the 135M went from 118 to 76 ms per token on one thread, the 360M from 272 to
+192, the 1.7B from 1233 to 869. Most of it is v1.5.0's dot product, unrolled by four with the same bits
+(`bend-ml-tensor-array@0.1.19.0`); the rest is Bend 2.0.40 and generation no longer keeping the activations it never
+reads.
 
-On 2026-11-07 I measured the 135M again with the same protocol, on the current code (v1.5.1's, on tensor-array
-0.1.20.0) and Bend 2.0.40: a token takes 79.5 ms on one thread and 53.1 on 16, against llama.cpp's 23.8 and 13.9, so
-3.3 and 3.8 times slower (5.0 and 3.8 times on 2026-11-01).
+A prompt runs through each layer in one pass (`llama/prompt.bend`), with the bits of the position-by-position path
+it replaced: the first token of a 77-token prompt comes after 1.5 s on the 135M on one thread (4.7 s before), 3.9 s
+on the 360M (12.7 s) and 18 s on the 1.7B (65 s); on 16 threads after 1.0, 2.0 and 6.4 s (3.9, 7.2 and 20.8). In a
+conversation the caches stay, and a later turn's first token comes 2.4 to 6.7 times sooner than from the
+conversation run again: a second turn answers after 0.32 s on the 135M-Instruct on 16 threads instead of 0.78 s,
+and after 1.9 s on the 1.7B-Instruct instead of 4.8 s. I did not measure the other systems' time to the first
+token.
 
-Bend 2.0.40 gives a token the same cost as 2.0.39: the same commit built with 2.0.39 takes 80.1 ms on one thread and
-51.7 on 16 (5 alternated rounds the same night; 2.0.40 is 2.7% slower on 16, every range overlapping). Start-up is
-faster: loading the model and generating one token takes 0.42 s against 0.49 on one thread and 0.36 against 0.42 on
-16, and over a 33-token run the program runs 6.4% fewer instructions and 5.7% fewer cycles (hardware counters, 3
-rounds). Before it, 2.0.39 was faster than 2.0.38 on 16 threads (51.6 against 58.7 ms on the
-135M, 2026-10-24), and 2.0.36 and 2.0.37 (which carries my fix for parallel code with an erased last parameter) ran the
-same commit at the same speed: no def here had the shape that fix is about.
+16 threads is not the fastest count for the two small models. On 8 threads the 135M takes 45.7 ms per token and on 4
+the 360M takes 89.5, against 54.6 and 99.6 on 16; two threads now use two bands (52.2 ms on the 135M, where they used
+to run on one core at 76.3). The table from 1 to 22 threads is in [`BENCHMARK.md`](BENCHMARK.md), and section 05
+says how to ask for a count.
+
+Bend 2.0.40 against 2.0.39 on the same commit, by `scripts/bench_compare.sh` on 2026-11-12 (the 135M, 128 tokens, 5
+alternated rounds): 79.1 against 82.5 ms on one thread and 60.1 against 58.9 on 16, 4.1% faster and 2.0% slower, both
+pairs of ranges apart. Start-up is faster with 2.0.40 (0.42 s against 0.49 on one thread, 2026-11-07). The earlier
+releases are in [`bench/history.md`](bench/history.md): 2.0.39 was faster than 2.0.38 on 16 threads (51.6 against
+58.7 ms on the 135M, 2026-10-24), and 2.0.36 and 2.0.37 (which carries my fix for parallel code with an erased last
+parameter) ran the same commit at the same speed: no def here had the shape that fix is about.
 
 ## 05 · Reproduce
 
@@ -130,21 +151,39 @@ make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checke
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
 bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
 ./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
-./gen data/smollm2-135m --chat "What is the capital of France?" 32   # one user turn in the chat template
+make prep MODEL=smollm2-135m-instruct   # the instruct checkpoint (270 MB)
+./gen data/smollm2-135m-instruct --chat "What is the capital of France?" 32   # one user turn: "The capital of France is Paris."
+./gen data/smollm2-135m-instruct --chat - 64   # a conversation: type a turn after "> ", read the answer as it is written; Ctrl-D ends it
 ```
 
 Greedy is the default and `temperature 0` is greedy too. A seed gives the same tokens on every run, on one thread as
 on all of them (nothing is kept between draws). `--chat` wraps the prompt in SmolLM2-Instruct's template (default system message, then the user turn, then the
-assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well.
+assistant's) and stops at `<|im_end|>`; it takes the sampling settings after the token count as well. It is for the
+instruct checkpoints: a base model only continues the template's text. With `-` in place of the message, every line
+of the standard input is a user turn of one conversation. The caches stay between the turns: a turn's ids go
+through the layers in one pass on top of them and the answer follows, so the conversation before it is never run
+again. It ends with the input, or when the caches are full (2048 positions, or `GEN_CTX`).
 
-The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`.
+The runtime uses every hardware thread unless told otherwise, and that is not always the fastest count. On my
+machine (6 performance cores, 22 threads) the 135M is fastest on 8 threads, 16% faster than on 16 and 20% faster than
+on all 22; the 360M on 4, 10% and 15% faster; the 1.7B wants 12 or more ([`NOTES.md`](NOTES.md), 2026-11-12). Runtime
+options go between `+RTS` and `-RTS`, before the program's arguments:
+`./gen +RTS --threads 8 -RTS data/smollm2-135m "Once upon a time" 32`. On a processor with two kinds of cores it
+also pays to keep the process on the fast ones: on mine, `taskset -c 0-11 ./gen +RTS --threads 8 -RTS ...` (the
+performance cores' twelve threads) takes 7% less per token on the 135M and 9% less on the 360M than 8 threads left
+to the system.
+
+The other models are one variable away: `make prep check MODEL=smollm2-360m`, or `MODEL=smollm2-1.7b`, and each
+one's instruct checkpoint (`MODEL=smollm2-360m-instruct`).
 Every loader reads the downloaded `model.safetensors` itself, so `make prep` writes no copy of the weights;
 `make prep F32=1` also writes the F32 copies (`w/<name>.bin`, 6.4 GB for the 1.7B) that `bend-ml-llama@0.2.0.0`'s
 loader reads.
 `reference/models.py` pins each one to a revision. In your own Bend program:
 
 ```python
-import bend-ml-llama@0.2.1.1/main.bend as M
+import bend-ml-llama@0.3.0.0/main.bend as M   # config, layers, model, loader, laws
+import bend-ml-llama@0.3.0.0/tok.bend as K    # the tokenizer and the chat template
+import bend-ml-llama@0.3.0.0/gen.bend as G    # generation, and a conversation that keeps its caches
 ```
 
 `make bench` is a one-command benchmark for optimization loops: it builds the generator with the `bend` on your PATH,
@@ -161,20 +200,27 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 ## 06 · Limits
 
-- **Slower than the references** ([`BENCHMARK.md`](BENCHMARK.md), 2026-11-01, Bend 2.0.39). On the 1.7B over 128
-  tokens at 16 threads, llama.bend takes 297 ms per generated token, `transformers` 125 and llama.cpp 101; on one
-  thread, 1.23 s against 0.24 and 0.33, with no gain since 2026-10-13. The cost of a token barely grows with the
-  position (0.2 ms per cached position at most). What remains is the weight products, and still loading: 5.1 s to load
-  the 1.7B and generate one token, against 3.2 s for `transformers` and 0.8 s for llama.cpp. Peak memory 6.8 GB, on one
-  thread as on 16, the lowest of the four.
+- **Slower than the references** ([`BENCHMARK.md`](BENCHMARK.md), 2026-11-12, Bend 2.0.40). On the 1.7B over 128
+  tokens at 16 threads, llama.bend takes 294 ms per generated token, `transformers` 130 and llama.cpp 101; on one
+  thread, 0.87 s against 0.24 and 0.33. On the two small models a token costs 3 to 4 times llama.cpp's. The cost of a
+  token barely grows with the position (0.15 ms per cached position at most). What remains is the weight products.
+  Loading the 1.7B and generating one token takes 3.6 s, against 3.5 s for `transformers` and 0.8 s for llama.cpp.
+  Peak memory 6.8 GB, on one thread as on 16, the lowest of the four.
+- **More threads are not always faster.** The runtime takes every hardware thread unless told otherwise, and on my
+  22-thread machine a token of the 135M and of the 360M takes 26% and 17% longer that way than on their fastest
+  counts, 8 and 4 (section 05). I measured this on one processor, with performance and efficiency cores; the rule that cuts the
+  model into bands by thread count was chosen there.
 - **The GPU path is slower than the CPU** (idle machine, 2026-11-07, Bend 2.0.40, [`NOTES.md`](NOTES.md)). With the products on an RTX
   4050 Laptop, over 128 tokens by the program's own clock, the 135M takes 182 ms per token and the 360M 228, against 60.1
   and 107 on 16 CPU threads over the same 128 tokens: every product is a GPU call with a fixed cost of about 1 ms, and
   generation has one vector a token to amortize it over. The 1.7B does not fit in the card's 6 GB; with
   `+RTS --gpu 12GB -RTS` it runs oversubscribed at 1.56 s per token against 0.30 on 16 CPU threads, with 7.6 GB of host
   memory (2026-11-01, Bend 2.0.39).
-- Base models only. The chat template is in (`--chat`), but `reference/models.py` does not pin the instruct checkpoints
-  yet, so a chat runs on a base model and answers like one. Sampling matches its Python twin, not `transformers`' own
+- A conversation ends when its caches are full (2048 positions unless `GEN_CTX` says otherwise): nothing is dropped
+  from its start to make room. It keeps the ids it ran, where `transformers` would encode each answer's text again;
+  on the instruct checkpoints the two are the same ids at every turn tested, and a base model's continuations do
+  not always encode back. `--chat` sends the template's default system message; one's own is not in `gen` yet (the
+  template in Bend takes it: `reference/test_chat.py`). Sampling matches its Python twin, not `transformers`' own
   sampler (whose random numbers are PyTorch's); it runs on the CPU path only (`gen_gpu.bend` stays greedy), needs a
   top-k (k >= 1), and its cost grows with k (not timed yet). A special token written inside a chat message is encoded
   as text. The vectors between layers are lists whose length is not in their type, and the numerics are tested, never
@@ -184,19 +230,25 @@ Contributions are welcome: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (pull reques
 
 | Path | What |
 |---|---|
-| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`); the fast loader the demos use (`load.bend`) |
+| [`llama/`](llama/) | the package `bend-ml-llama`: config, layers, model, loader and laws (`main.bend`), the tokenizer and chat template (`tok.bend`, `unicode.bend`), the prompt in one pass (`prompt.bend`), the generation loop (`gen.bend`) and the entry that publishes them together (`package.bend`), on BendHub as `bend-ml-llama@0.3.0.0`; beside them, the fast loader the demos use (`load.bend`) |
 | [`llama/gpu.bend`](llama/gpu.bend) | generation with the products on the GPU (bend-ml-tensor-gpu), outside the package and its laws |
-| [`demo/`](demo/) | `gen.bend` (generation: greedy, sampled, chat), `gen_gpu.bend` (greedy on the GPU), `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read), the tokenizer and chat template |
+| [`demo/`](demo/) | programs on the package: `gen.bend` (generation: greedy, sampled, a chat turn or a conversation), `gen_gpu.bend` (greedy on the GPU), `hello.bend` (the smallest one, on the package's files alone), and `tok.bend`, `forward.bend`, `layer_test.bend` and `sample_test.bend` (what the tests read) |
 | [`tests/`](tests/) | programs that must not compile |
 | [`reference/`](reference/) | download and preparation, the `transformers` and `tokenizers` oracles, the tests |
 | [`BENCHMARK.md`](BENCHMARK.md) | the numbers in section 04, with the machine and the method |
 | [`NOTES.md`](NOTES.md) | every finding, measurement and decision, by date |
 | [`docs/plan.md`](docs/plan.md), [`docs/bendtorch.md`](docs/bendtorch.md) | the milestones; what a backward pass would need |
+| [`docs/upstream/`](docs/upstream/) | the programs behind my open `bendlang/bend` issues |
 
 ## Upstream
 
 While building bend-ml I found that a parallel let became sequential when its def's last parameter was erased
 ([bendlang/bend#1374](https://github.com/bendlang/bend/issues/1374)). My fix,
 [#1377](https://github.com/bendlang/bend/pull/1377), is in Bend 2.0.37 and later; this project runs on 2.0.40.
+
+Getting the prompt's pass to use its threads, I measured what a small parallel let costs on many of them: the
+runtime wakes every worker thread for it, and the sequential code after it runs slower
+([bendlang/bend#2141](https://github.com/bendlang/bend/issues/2141), open). The program that shows it is in
+[`docs/upstream/`](docs/upstream/); the pass runs those lets in sequence since then.
 
 <p align="center"><sub>MIT · Renan Vinícius (@nuxyel) · the visual identity is bend-ml's, in Bend's own colours · the launch video (v1.0): <a href="https://github.com/nuxyel/llama.bend/releases/download/v1.0.0/llama.bend.mp4">llama.bend.mp4</a></sub></p>

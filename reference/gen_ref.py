@@ -25,8 +25,10 @@ def main():
     for prompt in PROMPTS + EXTRA:
         ids = tok(prompt, add_special_tokens=False)["input_ids"]
         with torch.no_grad():
+            # the end token is named here: an instruct checkpoint's config names <|im_end|> (id 2), and demo/gen.bend
+            # stops a plain prompt after the end-of-text token only (id 0), which is also every base model's
             g = model.generate(torch.tensor([ids]), do_sample=False, max_new_tokens=N_NEW, output_logits=True,
-                               return_dict_in_generate=True, pad_token_id=tok.eos_token_id)
+                               return_dict_in_generate=True, eos_token_id=0, pad_token_id=0)
         new = g.sequences[0, len(ids):].tolist()
         logits = [float(lg[0, i]) for lg, i in zip(g.logits, new)]
         text = tok.decode(ids + new, skip_special_tokens=True)

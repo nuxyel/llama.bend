@@ -1474,3 +1474,516 @@ An unattended night on the idle machine (started after five quiet minutes: load 
   probe on 1.00 and 7.41 cores); `make bits` on 16 threads and on one (23 outputs identical to the saved bits);
   `reference/test_gen.py` on the 360M and on the 1.7B (12 prompts and the two malformed tables each, 0 failures); the
   emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
+
+## Generation without the activations on one band (2026-11-12)
+
+`forward_gen` left every layer's activations empty only when the model was in more than one band. On one band it kept
+them, a choice of 2026-10-16 on Bend 2.0.37, when leaving them out had measured 4 to 11% slower on one thread. It now
+leaves them empty always (`forward.go(False{}, ..)`): generation never reads them. The ids and the logit bits do not
+move: `make check`, `make bits` on 16 threads and on one (23 outputs identical), and `reference/test_gen.py` on the
+360M and on the 1.7B, on one thread and on the default count (0 failures).
+
+- **On the idle machine** (an unattended night started after five quiet minutes, mains power, `performance`; Bend
+  2.0.40, `bc50732` against `a76390e`; one thread pinned to a performance core, alternated shuffled rounds; ms per
+  token by the program's own clock as median and range, and the whole run's user-mode instructions):
+
+  | model, tokens | rounds | kept | left empty | time | instructions |
+  |---|---|---|---|---|---|
+  | 135M, 48 | 7 | 78.4 (76.1-80.5) | 75.6 (72.4-76.7) | -3.6% | -2.3% |
+  | 360M, 32 | 7 | 190.9 (190.0-192.4) | 191.7 (189.5-193.8) | +0.4% | -1.5% |
+  | 1.7B, 16 | 5 | 923.8 (919.3-940.3) | 889.3 (884.0-903.7) | -3.7% | -0.6% |
+
+  The 135M is faster in each of its 7 rounds, with the two ranges touching; the 360M is the same; the 1.7B's ranges
+  are apart. On 16 threads, where both programs run the same code, nothing moves (55.6 and 55.6, 99.2 and 98.9, 274.9
+  and 283.2 ms, every pair of ranges overlapping). Over 128 tokens of the 1.7B the benchmark's harness gives 940
+  against 869 ms (-7.6%): by the program's own clock a token with the activations kept grows 0.43 ms per cached
+  position, and 0.14 with them empty.
+- **It is not where clang put the loops.** Both programs rebuilt from their emitted C with `-falign-loops=64` give the
+  same gaps (135M -2.5%, 360M +1.0%). That was the cause the 2026-10-16 entry found on 2.0.37.
+- **Why the gain is smaller than the work removed.** In two flat profiles of the 135M the work outside the product
+  falls from 4,247 M to 2,468 M cycles (`term_drop` from 1,303 M to 410 M), and the product, the same instructions in
+  both, rises from 14,978 M to 15,772 M.
+- **The gain depends on what else the machine is doing.** A second idle round the same night ran the two programs
+  in alternated blocks with the screen still and with it changing every frame (a desktop notification replaced about
+  30 times a second, nothing else running), one thread, three blocks of each:
+
+  | model, tokens | screen | kept | left empty | |
+  |---|---|---|---|---|
+  | 135M, 48 | still | 77.7 (76.1-78.5) | 75.0 (74.2-76.2) | -3.5% |
+  | 135M, 48 | changing | 79.2 (78.5-79.4) | 66.9 (66.9-66.9) | -15.5% |
+  | 360M, 32 | still | 189.3 (186.8-191.8) | 191.3 (184.7-192.3) | +1.0% |
+  | 360M, 32 | changing | 193.8 (193.4-194.6) | 175.5 (175.4-176.9) | -9.5% |
+  | 1.7B, 16 | still | 912.3 (911.7-924.6) | 879.3 (860.5-893.2) | -3.6% |
+  | 1.7B, 16 | changing | 879.0 (878.5-879.3) | 782.8 (781.2-784.4) | -10.9% |
+
+  The core runs at the same frequency in both states. With the screen changing, a read that misses the L2 waits less:
+  on the 135M the product costs 13.1 G cycles in one program and 13.2 G in the other, instead of 15.0 and 15.8. The
+  program that keeps the activations loses that outside the product: it writes each new list into memory it has not
+  touched for a whole token and `term_drop` walks them all at the end, and once other cores use the shared cache
+  those reads go to memory (its cycles stalled on an L3 miss go from 0.5 G to 2.2 G; the other program's stay at 0.3
+  to 0.5 G). I did not find what in the processor makes the difference; a process that only wakes 60 times a second,
+  a ping or a file being written do not. A diagnosis I took on 2026-11-11 while working on the machine had said 8 to
+  15% on the three models: it was the second state, and I had read it as the result.
+- `BENCHMARK.md` and the README keep the idle protocol's numbers, which are the still screen's. Raw rows:
+  [`bench/2026-11-12-activations/`](bench/2026-11-12-activations/).
+
+## The band depth follows the thread count and the model's width (2026-11-12)
+
+The model was cut into bands only above two threads: `depth_for` gave one band up to two threads and 16 above. The
+first idle round of the night took the thread curve of `a76390e` (ms per token, medians of 5 rounds, 3 for the 1.7B,
+and the cores the run used):
+
+| threads | 1 | 2 | 4 | 8 | 12 | 16 | 22 |
+|---|---|---|---|---|---|---|---|
+| 135M, 40 tokens | 76.2 | 76.2 | 50.8 | 48.7 | 54.0 | 54.8 | 58.9 |
+| 360M, 40 tokens | 192.1 | 193.8 | 100.1 | 92.7 | 97.2 | 102.1 | 108.5 |
+| 1.7B, 16 tokens | 882.9 | 875.3 | 334.4 | 306.4 | 273.5 | 284.5 | 267.5 |
+| cores used, 135M | 1.00 | 1.00 | 2.58 | 4.07 | 5.56 | 7.25 | 9.41 |
+
+Two threads ran on one core: the second had no band to take. And the 135M and the 360M were fastest on 8 threads,
+with 16 threads 12% and 10% slower and the runtime's default of 22 slower still.
+
+- **A sweep of threads against a fixed depth** (builds with the depth forced to 1 to 5; a diagnosis, taken while I
+  was working on the machine, one or two runs a cell; [`bench/2026-11-12-band-depth/sweep.tsv`](bench/2026-11-12-band-depth/sweep.tsv))
+  put the best depth of the two narrow models at as many bands as threads on 2, 4 and 8 threads and at 8 bands on 3
+  and 6, with 16 bands best from 12 threads on. The 1.7B wants two bands on two threads and 16 or more from three on:
+  with as many bands as threads it lost 18% on three threads and 11% on six (449 against 381 ms, 320 against 287). Its
+  bands are large next to a fork, and more bands than threads let the threads even out on this processor, whose
+  cores are not all the same.
+- **The rule**, `depth_in(c, threads)`, which the loaders call: one thread, one band; two threads, two bands; from
+  three threads on, 16 bands for a model at least 1024 wide, and for a narrower one 4 bands on four threads, 8 on
+  three and on five to eight, 16 beyond. `depth_for(threads)` keeps its signature and is the narrow model's rule. The
+  embedding still gets one level more than the layers.
+- **Measured by the protocol** in the night's second idle round, `a76390e` against `336819b`, medians of 5 alternated
+  rounds (3 for the 1.7B), ms per token, old → new:
+
+  | threads | 135M, 40 tokens | 360M, 32 tokens | 1.7B, 16 tokens |
+  |---|---|---|---|
+  | 1 | 76.3 → 76.5 | 193.7 → 192.5 | 905.3 → 889.0 |
+  | 2 | 76.3 → 52.2 (-31.6%) | 193.8 → 112.8 (-41.8%) | 896.9 → 457.8 (-49.0%) |
+  | 3 | 55.2 → 51.2 (-7.3%) | 106.8 → 105.9 (-0.8%) | 379.9 → 377.8 |
+  | 4 | 50.8 → 46.2 (-9.1%) | 99.5 → 89.5 (-10.0%) | 333.7 → 334.3 |
+  | 6 | 49.8 → 47.6 (-4.4%) | 94.0 → 95.1 (+1.1%) | 286.0 → 289.5 |
+  | 8 | 49.1 → 45.7 (-6.9%) | 92.1 → 90.6 (-1.6%) | 308.0 → 306.5 |
+  | 12 | 53.2 → 53.4 | 96.2 → 95.7 | 264.6 → 267.6 |
+  | 16 | 54.9 → 54.6 | 100.1 → 99.6 | 281.1 → 282.3 |
+  | 22 | 58.6 → 57.4 | 105.4 → 105.2 | 271.3 → 270.3 |
+
+  The rows with a percentage are the ones whose depth changed; their ranges are apart, except the 360M on 6 threads,
+  whose two ranges overlap. Two threads now use 1.62 to 1.67 cores. Where the depth is the same the two programs
+  agree within 1.2% with overlapping ranges (2.1% for the 135M on 22 threads), except the 1.7B on one thread, 1.8%
+  apart over 3 rounds with the same instructions in both: that is the spread of this measurement on the 1.7B, not a
+  gain.
+- **The fastest count** is now 8 threads for the 135M (45.7 ms; 46.2 on 4), 16% under its 16 threads and 20% under
+  the 22 the runtime takes when nothing is asked; 4 threads for the 360M (89.5; 90.6 on 8), 10% and 15% under; 12 or
+  22 for the 1.7B. The README says how to ask for a count.
+- **Not taken**: the 1.7B on 8 threads was 6% faster with 32 bands in the sweep (277 against 296 ms, twice) and 2%
+  faster with 4 bands on four threads (once), but 32 bands lose on 12 and 16 threads, and I have no rule to state for
+  it.
+- **The bits are the same at every depth**: `make bits` on 1, 2, 3, 4, 8, 16 and 22 threads (23 outputs identical
+  each time), `make check`, the laws with `--verdict`, and `reference/test_gen.py` on the 360M and on the 1.7B on 2,
+  4 and 8 threads (0 failures). The emitted C keeps `par_att`'s two joins. Raw rows:
+  [`bench/2026-11-12-band-depth/`](bench/2026-11-12-band-depth/).
+
+## The instruct checkpoints (2026-11-12)
+
+`reference/models.py` now names SmolLM2-135M-Instruct, SmolLM2-360M-Instruct and SmolLM2-1.7B-Instruct as models
+(`MODEL=smollm2-135m-instruct` and so on), at the revisions `INSTRUCT` pinned on 2026-11-01 for the chat template.
+Nothing under `llama/` or `demo/` changes: the three have their base models' architectures (the same `cfg.txt` line)
+and the same `tokenizer.json` (sha256 9ca9acdd...), with other weights, so `--chat` now has models trained to answer.
+
+- **`make check` with each of the three**: 0 failures in every test, as on the base models. The logits are within
+  4.0e-6, 1.4e-5 and 6.2e-5 of the largest logit on the 11 prompts, with the same argmax at the 88 positions, and the
+  twelve greedy prompts give `transformers`' tokens and text.
+- **One chat turn against transformers**, new: `reference/chat_gen_ref.py` writes, for twelve messages, the ids of
+  `apply_chat_template` (one user turn, the template's default system message, the assistant's turn opened) and what
+  `generate` answers in up to 32 greedy tokens, stopping after `<|im_end|>` (id 2) or the end-of-text token (id 0);
+  `reference/test_chat_gen.py` compares `gen --chat` with it: the prompt ids, the generated ids and the text
+  identical, the chosen logits within 1.4e-6, 2.6e-6 and 1.4e-6 on the three instruct checkpoints. It is in `make
+  check`, so the base models run it too, where the answer is the template's text continued (the base 135M: 0
+  failures).
+- **An instruct checkpoint's `config.json` names `<|im_end|>` as its end token**, and `gen` stops a plain prompt after
+  id 0 only, so `gen_ref.py` now names id 0 in `generate`. The base models' references do not move (the 135M's
+  `gen.json` is byte for byte what it was).
+- What the answers look like: to "What is the capital of France?", the 135M-Instruct and the 360M-Instruct say "The
+  capital of France is Paris."; to "What is 2 + 2?" the 360M-Instruct says "2 + 2 = 4." and the 135M-Instruct starts
+  an essay; asked for a haiku about the sea the 360M-Instruct writes "The waves below, / A gentle lullaby, / The sea's
+  eternal song."; and only the 1.7B-Instruct translates "good morning" to Portuguese ("'Good morning' translates to
+  'Bom dia' in Portuguese."). A chat turn on the 1.7B-Instruct took 13 to 25 s here, on a machine busy with other
+  tests, so that is no measurement; most of it is the 33 to 52 prompt tokens, which run one position at a time.
+- Left for the chat: several turns and a system message of one's own on `gen`'s command line (the template in Bend
+  already takes them), and keeping the key/value cache between turns.
+
+## The package holds the tokenizer and the generation loop (2026-11-12)
+
+Until today `bend-ml-llama` was `llama/main.bend` alone, and a program that wanted to go from a prompt to tokens had
+to copy about 1,000 lines from `demo/`: the tokenizer, the chat template and the generation loop. I moved them into
+`llama/` as files of the package. `llama/main.bend`, `load.bend` and `gpu.bend` did not change.
+
+- **What moved.** `demo/tok.bend` and `demo/unicode.bend` became `llama/tok.bend` and `llama/unicode.bend` (`git mv`;
+  the command line the tests drive is `demo/tok.bend` again, 96 lines on the library). The loop of `demo/gen.bend`
+  (`Pick`, the choice of a token, the stop rule, `loop`) became `llama/gen.bend`; `demo/gen.bend` keeps the command
+  line and the printing, and `demo/gen_gpu.bend` its own loop over `gpu.bend`'s model. `utf8_of` (a `String` as UTF-8
+  bytes) went from `demo/gen.bend` to `tok.bend`. `forward.bend`, `layer_test.bend` and `sample_test.bend` were
+  already callers of `main.bend` (and of `load.bend`) and nothing else, so they did not change.
+- **The API.** `tok.bend`: `Tables` (the merge rules and the byte permutation, built once), `load(dir)`,
+  `read_tables(merges, perm)`, `encode(tb, text)`, `decode(tb, ids)` and `chat(tb, ms, gen)`, over the byte-level
+  `encode_text`, `decode_text` and `chat_ids`, which keep their signatures. `gen.bend`: `Pick` (`Greedy`, `Draw`),
+  `choose`, `generate(c, m, pk, chat, ids, n)`, which returns the tokens (the id and logit of each) and hands the
+  model back, and `tokens`, the same loop one token at a time. `llama/README.md` lists every name.
+- **Tokens one at a time, without a callback.** `demo/gen.bend` prints each token with its time, so the loop cannot
+  only return a list. A closure can be called once in Bend, so a callback per token would have to be a template
+  (`~f`), which cannot capture the start time or the flags. `tokens` returns a value instead: `Tok{am, cs, m, rest}` is
+  one new token, the model, and the rest of the generation, which runs when it is given the model back (`rest(m)`),
+  like the next step of a generator; `End{m}` is the end. The caller walks it: `demo/gen.bend` prints a line and asks
+  for the rest, `generate` collects (`take`). The loop is the old one, recursing inside `Out.then`'s closure, with its
+  two forward calls as they were.
+- **A draw's candidates are computed once.** `choose` calls the two halves of `sample`, `topk` and `sample.cs`, and
+  hands the candidates out with the token, so `GEN_CANDS=1` prints the list the draw used. Before, the demo called
+  `sample` and then `topk` again to print it. The F32 operations and their order are the same, and
+  `reference/test_sample.py` finds the same draws.
+- **One change in order, none in output.** `read_tables` parses the merges file, checks it and builds the rules in one
+  call, so `gen` builds the rules before it loads the weights (it built them after). A malformed table is still
+  refused before anything else is read.
+- **The entry.** `llama/package.bend` imports the other four files, because `--publish` sends an entry and what it
+  imports; BendTorch's entry has the same name. `make laws` runs `bend` and `--verdict` on each of the five files
+  (`ALL PROOFS CHECK` from each), fails on an import of `load.bend`, of binary-read or of a file outside `llama/`, and
+  fails if the entry misses a file. A package file must not name tensor-gpu or `gpu.bend` even in a comment: the grep
+  that guards `main.bend` reads all five.
+- **A program on the package alone.** `demo/hello.bend`, 19 lines of code: the tables, the config and the model (with
+  `main.bend`'s plain-Bend loader), a prompt encoded, n greedy tokens, the ids printed. `make check` builds it from a
+  copy of the five files in `.scratch/pkg`, where an import from outside the package does not compile, and compares its
+  128 tokens for "Once upon a time" with `bench/expected-<MODEL>.txt` (`reference/test_hello.py`): the same on the
+  135M and on the 360M (about 11 and 22 s on a busy machine). The same from a folder outside the repository that
+  holds a copy of the five files, `hello.bend` and nothing else. An absolute path cannot stand in for the copy: Bend
+  refuses an import path with a segment that is not a plain name, and this repository's folder is `llama.bend`.
+- **No bit moved.** Before the first change I saved the output of 22 `gen` command lines (greedy, sampled, chat,
+  `GEN_CANDS=1`, one thread, bad arguments, an empty prompt, a malformed table), 18 of `tok` and 8 of `gen_gpu` with its
+  bangs on the CPU threads; after the last change the 48 outputs are byte for byte the same, the times aside. A base
+  model never emits `<|im_end|>` in them, so I also ran four chat turns on the 135M's instruct checkpoint: two greedy
+  ones and a sampled one stop at `<|im_end|>`, one runs its 64 tokens, each the same before and
+  after. The checklist (`docs/release.md`, section 2) on Bend 2.0.40, a busy machine, so no timing here is a
+  measurement: `make laws`; `make check` on the 135M (0 failures, the thread probe on 1.00 and 7.21 cores); `make bits`
+  on 16 threads and on one (23 outputs identical to the saved bits); `reference/test_gen.py` on the 360M (12 prompts and
+  the two malformed tables, 0 failures); `make bench`, `make bench-gpu` and `GPU=off` (transformers' tokens); the
+  emitted C still has `par_att`'s two joins (`..._par_att_j0` and `_j3`); `make lint`: 0 findings, 12 suppressed, as
+  before (one run of six stopped with the checker's "Maximum call stack size exceeded" on `demo/gen_gpu.bend`, as on
+  2026-10-28; run again, it passed). I did not run the 1.7B.
+- **Not done.** Nothing is published: `bend-ml-llama@0.2.1.1` on BendHub is still `main.bend` alone, and the READMEs'
+  import lines stay as they are until the next version goes out from `llama/package.bend`.
+- **Debt: a first law for the tokenizer.** I wanted "the pieces of the pre-tokenizer, joined, are the input bytes". As
+  the code stands it is false on the list the pre-tokenizer works on, where every byte carries its class as a tag: the
+  piece "space + run" is rebuilt from the space's byte without its tag, so "a b" goes in as `97 800 98` and comes out as
+  `97` and `32 98`. It can hold once the tags are taken off (`nats_of`, the next step), but stating it there needs
+  `U32.mod(U32.mod(c, 256), 256) == U32.mod(c, 256)`, and the only fact Base proves about U32 arithmetic is
+  `U32.add_comm`. Keeping the tagged byte in that piece would make the statement true on the tagged list without
+  changing an id; the proof would still need "every piece is non-empty" for the fuel of `split`, over the five kinds of
+  piece. Left for a session of its own.
+
+## The prompt's positions without the activations on one band (2026-11-12)
+
+`forward_pre` runs the prompt's positions, whose logits nobody reads. On one band it still kept every layer's
+activations, as `forward_gen` did until `a76390e`; it now leaves them empty there too (`layers(False{}, ..)`). The
+ids and logit bits do not move: `make check`, `make bits` on 22 threads and on one (23 outputs identical), and the
+twelve chat turns, whose prompts are 33 to 52 ids, on the three instruct checkpoints on one thread (0 failures).
+
+- **Measured** in a third idle round (09:57 to 10:08, nobody at the machine), `83e1125` against `961308b`, one thread
+  pinned to a performance core: ms from the start of the prompt to the first new token, with 56 prompt ids on the
+  135M and the 360M and 25 on the 1.7B, in eight interleaved blocks, the desktop still in five and redrawing every
+  frame in three (the notification of the entry on the generated positions), as median and range:
+
+  | model, prompt ids | desktop | kept | left empty | time | instructions |
+  |---|---|---|---|---|---|
+  | 135M, 56 | still | 3476 (3408-3555) | 3460 (3346-3500) | -0.5% | -2.9% |
+  | 135M, 56 | redrawing | 3304 (3269-3312) | 3095 (3041-3100) | -6.3% | |
+  | 360M, 56 | still | 9073 (8965-9283) | 9003 (8624-9013) | -0.8% | -1.9% |
+  | 360M, 56 | redrawing | 9170 (9151-9186) | 8737 (8631-8809) | -4.7% | |
+  | 1.7B, 25 | still | 21648 (20906-21921) | 20918 (20730-21318) | -3.4% | -0.8% |
+  | 1.7B, 25 | redrawing | 20369 (20158-20536) | 17929 (17927-17999) | -12.0% | |
+
+  With the desktop still every pair of ranges overlaps; with it redrawing they are apart on the three. The control,
+  the 135M on 16 threads, where both programs run the same code: 2666 and 2707 ms, the ranges overlapping.
+- So it is the generated positions' picture again: fewer instructions, no time I can measure on a quiet machine,
+  5 to 12% on a machine whose desktop is at work, and never slower. I claim no number for the quiet machine.
+- **It is not the panel.** The entry on the generated positions says "the screen changing". In this round the panel
+  was off, the display driver raised no interrupt in any run (about 11,400 a block in the round before), and the same
+  notification had the same effect: the 1.7B's program with the activations empty took 87 G cycles with the desktop
+  redrawing and 102 to 104 G with it still, for the same instructions. What makes the difference is the desktop's
+  processes, the compositor and the notification server, at work on other cores for every frame, with the panel on
+  or off. I still do not know what in the processor it changes.
+- Raw rows: [`bench/2026-11-12-activations/prompt.tsv`](bench/2026-11-12-activations/prompt.tsv).
+
+## The prompt in one pass (2026-11-12)
+
+Until now a prompt ran one position at a time (`forward_pre`), and every position read every weight matrix: a chat
+turn of 37 ids spent most of its time there. `llama/prompt.bend`, a new file of the package, runs the prompt's
+positions through each layer together.
+
+- **How.** `forward_prompt` puts the embedding rows of the n ids in an array, one row a position, and every layer
+  runs `block_p` on it: the norm of every row; Q, K and V by three products; then position by position, as
+  `block_gen` does, the rotations, the push into the cache and attention; the output projection by a product; the
+  residual and the second norm; gate and up by two products, SwiGLU row by row, down by a product; the residual. The
+  final norm and the product by the embedding run on the last position only. Between the products each position is
+  read back as a list and goes through `main.bend`'s own functions, so every number is computed by the same
+  operations in the same order.
+- **The product.** One band of W and the n rows of X go to tensor-array's `gemm_t8` (cells of 8) with W as its
+  first operand, so each row of W meets every position before the next row is read. I had planned the operands the
+  other way round (`Mat.matmul_nt`'s layout), which walks the packed W once per position: on a probe of the 1.7B's
+  8192 x 2048 with 25 positions, on one thread, 121 ms against 45, and 201 ms row by row, the old path's order (a
+  diagnosis, not an idle run). The layouts give the same bits: a product of two numbers commutes exactly, and the
+  sums along a row are the dot product's in all of them (tensor-array's `tests/t8.bend` checks cells of 8 against the
+  scalar loop). The bands run as `Bands.matvec_l` runs them for one vector: the two halves in a parallel let, each
+  with a copy of X.
+- **The cache's index stays static.** A layer's position loop holds the cache at `KV<cap, t>` with `left` positions
+  to go and an erased proof that t + left = tT, where tT <= cap. Each push gets its proof of room from `step_room` and
+  `leb_trans`, and at the end `add_zero` turns t + 0 = tT into t = tT; `kv_cast` asks for that proof and rebuilds the
+  cache at tT (the count is in the type only, as in `KV.push`). `bend --verdict` accepts the file; it holds no law of
+  its own yet.
+- **`gen.bend`'s `tokens`** runs a prompt of two ids or more through `forward_prompt`, chooses the first token from
+  its logits and continues its loop at the prompt's length. One id keeps the old path (`tokens.seq`), which
+  `GEN_SEQ=1` selects in `demo/gen.bend` for any prompt.
+- **The same bits.** `reference/test_prompt.py` (new, in `make check`) runs the two paths of one program on prompts
+  of 1, 2, 7 and 77 ids and on a chat turn, on one thread and on 16: the same prompt ids, generated ids, logit bits
+  and text, on the three models and on the 135M's instruct checkpoint. The checklist on a busy machine: `make check`
+  (10 tests, 0 failures, the laws with `--verdict` on the package's six files among them), `make bits` on 22, 1, 2
+  and 4 threads (23 outputs identical), `reference/test_gen.py` on the 360M and on the 1.7B, the twelve chat turns on
+  the three instruct checkpoints on 1 and 22 threads, bend-lint with 0 findings.
+- **Measured** in an idle round (12:42 to 13:05, nobody at the machine), `250bc14` against `4770462`: ms from the
+  start of the prompt to the first new token, medians of 5 alternated rounds (3 for the 1.7B), every pair of ranges
+  far apart:
+
+  | model, prompt ids | 1 thread, before → now | 16 threads, before → now | now, its best count |
+  |---|---|---|---|
+  | 135M, 56 | 3510 → 1115 (3.1x) | 2714 → 1034 (2.6x) | 775 on 4 threads |
+  | 135M, 77 | 4727 → 1537 (3.1x) | 3858 → 1409 (2.7x) | 1042 on 4 |
+  | 360M, 56 | 9169 → 2905 (3.2x) | 5105 → 1788 (2.9x) | 1593 on 4 |
+  | 360M, 77 | 12663 → 3936 (3.2x) | 7201 → 2504 (2.9x) | 2144 on 4 |
+  | 1.7B, 25 | 21101 → 6794 (3.1x) | 6266 → 2406 (2.6x) | 2404 on 22 |
+  | 1.7B, 77 | 65388 → 17960 (3.6x) | 20829 → 7281 (2.9x) | 6912 on 8 |
+
+  A prompt position costs 20 ms on the 135M on one thread (63 before), 51 on the 360M (164) and 233 to 272 on the
+  1.7B (845); on one thread the whole run takes 35.1 G instructions instead of 78.0 G (the 135M, 56 ids).
+- **What it does not do yet.** The pass gains little from threads on the two small models: both are fastest on 4
+  threads and slower from 8 on. Products are about half of one thread's time (a diagnosis profile of the 135M:
+  `gemm_t8` 46%, packing the operands 5%); the list work between them runs on one thread, and with 16 bands each
+  product copies the prompt's rows at every fork and packs them again in every band. A layer's products that do not
+  depend on each other (Q, K and V; gate and up) still run one after another.
+- **The tokens after the prompt** are the code they were. On 16 threads they came out faster in this round after
+  the one-pass prompt (47.0 against 62.9 ms on the 135M, over the first eight tokens), which is a transient of the
+  machine and not of the program: in a diagnosis after the round, 64 tokens after the same prompt cost 46, 53, 60
+  and 64 ms over tokens 1-8, 9-16, 17-32 and 33-64 after the one-pass prompt (1.0 s of 16 threads before them) and 61,
+  62, 64 and 65 ms after the position-by-position one (2.7 s before them). The first seconds of a 16-thread run are
+  faster than its steady state, by about a quarter on the 135M; I take it for the processor's power budget and did
+  not check. The 32-token rows of `BENCHMARK.md`'s tables are inside that window, for every system alike.
+- Raw rows: [`bench/2026-11-12-prompt-pass/`](bench/2026-11-12-prompt-pass/).
+
+## A conversation that keeps its caches (2026-11-12)
+
+`gen --chat` answered one user turn, and a second turn would have meant running the whole conversation again. Now
+the caches stay between the turns.
+
+- **In the package.** `llama/gen.bend` has `Chat<c, cap>`, a conversation between two answers (the positions in the
+  caches and the last answer's last token, when it has not run yet), and `turn`, which gives the next answer one
+  token at a time as `tokens` does. The turn's ids go through `prompt.bend`'s pass at the positions after the ones
+  already there, the last position's logits choose the first token, and the loop goes on from it; `Over` hands the
+  conversation back with why the answer ended. `llama/tok.bend` has `chat_next`, the ids that follow an answer in
+  the template: `<|im_end|>`, a newline, the user's turn and the assistant's opening.
+- **The room.** The caches have room for `cap` positions, fixed when the conversation starts. `fit` counts a
+  turn's k ids against the positions left and returns the rest with the equation k + rest = room, or `Short`. From
+  that equation and the conversation's own t + room = cap, `room_inv` and `room_le` give the two proofs
+  `forward_prompt` asks for. A turn that does not fit has no proof to offer, so it cannot be written into the
+  caches: it answers `Unfit` and the conversation comes back as it was. When the room ends inside an answer, the
+  answer stops there (`Full`). The conversation does not carry its t + room = cap between the turns, because an
+  erased proof cannot be a field of a value: each turn counts t against cap again (`fit(t, cap)`), and that is the
+  equation it runs on. No new law: these are lemmas, and `kv_room` still says why a push inside the room does not
+  wrap. `bend --verdict` accepts the file.
+- **What a conversation keeps is ids.** When an answer ends, its last token has not gone through the model (the
+  loop stops before it). The next turn runs it first, unless it is a stop token: an `<|im_end|>` is then the
+  template's own, and an end-of-text token is left out, as `transformers` leaves it out of the answer's text. A
+  draw's index counts from the answer's first token. So an answer is, bit for bit, what `tokens` gives for the ids of
+  the whole conversation up to it, greedy or sampled.
+- **Against `transformers`.** `reference/chat_turns_ref.py` generates three conversations of three turns, every
+  turn from the whole conversation in ids, and records for each turn whether those ids are `apply_chat_template`'s
+  for the messages and the answers' texts. They are in the 27 turns of the three instruct checkpoints. On the 135M
+  base they are in 8 of 9: a base model continues the template's text, and one of its continuations does not encode
+  back to its ids. `reference/test_chat_turns.py` (new, in `make check`) runs the conversations on one thread and on
+  16: at every turn the ids the program has run are the reference's conversation, the answer's ids and text are
+  identical, and the chosen logits are within 1.3e-6 on the 135M-Instruct, 1.4e-6 on the 360M-Instruct and
+  1.4e-6 on the 1.7B-Instruct, and the two thread counts print the same logit bits. In the same binary, every
+  turn again as one prompt of the whole conversation, run from nothing, gives those ids and logit bits too; so does
+  a sampled conversation (temperature 1.5, which leaves the greedy answers) against one prompt with the same seed.
+- **The room, tested.** With room for the first turn and three positions more, the first answer is cut after four
+  tokens, the same four, the program says the caches are full, and the next turns answer `unfit` with the positions
+  they would need. With room for eight positions no turn runs, and each one is offered again as the conversation's
+  first.
+- **`demo/gen.bend --chat -`** reads a turn a line from the standard input and writes the answer's text as its
+  tokens come; a piece that ends in an unfinished UTF-8 sequence waits for the token that completes it. What
+  `IO.write` writes reaches a terminal only when the runtime next waits, so each piece is followed by
+  `IO.sleep(0)`. `GEN_TRACE=1` prints the lines the tests read, `GEN_CTX` sets the room (2048 positions by default)
+  and `GEN_IDS=1` reads a prompt as ids, which is how the tests run a whole conversation as one prompt.
+- **Time**, in an idle round (18:57 to 19:11, nobody at the machine), at `e0c785d`: ms from a turn's line to the
+  first token of its answer, with the caches kept → with the conversation so far run again as one prompt; medians of
+  5 alternated rounds (3 for the 1.7B). The first conversation's turns have 37, 15 and 19 ids of their own and the
+  third's 52, 17 and 13; a later turn's prompt is the whole conversation, 59 and 85 ids, 93 and 130.
+
+  | model, threads | conversation 1: turn 2 | turn 3 | conversation 3: turn 2 | turn 3 |
+  |---|---|---|---|---|
+  | 135M-Instruct, 1 | 389 → 1169 | 487 → 1674 | 466 → 1836 | 391 → 2602 |
+  | 135M-Instruct, 16 | 318 → 777 | 407 → 1087 | 390 → 1203 | 331 → 1743 |
+  | 360M-Instruct, 1 | 1005 → 3004 | 1223 → 4273 | 1186 → 4654 | 1012 → 6500 |
+  | 360M-Instruct, 16 | 561 → 1579 | 739 → 2281 | 712 → 2481 | 624 → 3507 |
+  | 1.7B-Instruct, 16 | 1909 → 4763 | 2461 → 7224 | | |
+
+  A later turn answers 2.4 to 6.7 times sooner with the caches kept, every pair of ranges far apart. A first turn
+  has nothing to keep, and it came 49 to 104 ms later than the same ids as one prompt: the conversation's clock
+  starts before the turn's text is encoded, and the one-prompt runs were given their ids. Timed alone afterwards (a
+  diagnosis), the tokenizer takes 53 and 89 ms for these two first turns and 16 to 21 ms for a later one, so the
+  later turns' numbers carry that much encoding too. Raw rows:
+  [`bench/2026-11-12-chat-turns/`](bench/2026-11-12-chat-turns/).
+- **Checks** on a busy machine: `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures each, the
+  laws with `--verdict` on the package's six files among them), `make bits` on 22 threads and on one (23 outputs
+  identical), `test_chat_turns.py` on the 360M-Instruct and on the 1.7B-Instruct, bend-lint with 0 findings.
+- **Not done.** Nothing is dropped from a conversation's start to make room: it ends when the caches are full. A
+  system message of one's own is not in `gen`. The package has no call that returns a whole answer at once, as
+  `generate` does for a prompt: a caller walks `Turn`, as `demo/gen.bend`'s `say` does.
+
+## The pass's heads in sequence (2026-11-12)
+
+The prompt's pass gained little from threads on the two small models and lost time from 8 threads on (two entries
+above). The products were not the reason.
+
+- **What pointed away from the products.** With the model in two bands whatever the thread count, the 135M's 56-id
+  prompt took 841, 904, 1012, 1090 and 1125 ms on 2, 4, 8, 16 and 22 threads (a diagnosis on a busy machine): the
+  same two tasks, slower with every thread added. And the process's system time grew with the threads, from 0.09 s
+  on one to 2.2 s on 16.
+- **Why.** `block_p` passed the model's band depth to `attention`, so every position's key/value heads ran in a
+  parallel let: a few microseconds of work each, 1,680 times for 56 positions and 30 layers, in the stretch between
+  two products, which runs on one thread. For a parallel let the runtime wakes every worker thread; each finds
+  nothing left to do, yields a while and sleeps again. That is processor time on the other cores and wall time
+  for the one thread that works. Generation has the same fork right after its products' own, and there I could not
+  measure a cost: 64 tokens within 3% with the heads in sequence or in parallel, on 4 to 22 threads (a diagnosis).
+- **The change.** In the pass `attention` runs at depth 0, a position's heads one after another, whatever the
+  model's depth; `atts`, `block_p` and `run_p` lose their depth parameter. Generation is untouched. The commit before
+  it makes a fork of the band product clone the positions once instead of twice (15 copies for 16 bands instead of
+  31), which I could only see on the 135M (a diagnosis: 734 to 675 ms on 8 threads).
+- **The same bits.** Each head is computed the same way in both orders. `reference/test_prompt.py` compares the pass
+  with the position-by-position path, whose heads still run in parallel on 16 threads: the same ids, logit bits and
+  text. The checklist on a busy machine: `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures
+  each), `make bits` on 22 threads and on one (23 outputs identical), `test_gen.py` and `test_prompt.py` on the 360M
+  and on the 1.7B, `test_chat_gen.py` and `test_chat_turns.py` on the 360M-Instruct and on the 1.7B-Instruct.
+- **Measured** in an idle round (18:42 to 18:56, nobody at the machine), the two commits together, `e0c785d` against
+  `6211b24`: ms from the start of the prompt to the first new token, before → now, medians of 5 alternated rounds (3
+  for the 1.7B, which ran on 8 threads and more).
+
+  | model, prompt ids | 1 thread | 4 | 8 | 16 | 22 |
+  |---|---|---|---|---|---|
+  | 135M, 56 | 1116 → 1108 | 783 → 655 | 872 → 711 | 1036 → 721 | 1052 → 657 |
+  | 135M, 77 | 1531 → 1515 | 1066 → 904 | 1184 → 966 | 1408 → 977 | 1419 → 925 |
+  | 360M, 56 | 2893 → 2886 | 1619 → 1443 | 1653 → 1538 | 1784 → 1474 | 1879 → 1391 |
+  | 360M, 77 | 3930 → 3881 | 2160 → 1994 | 2269 → 2070 | 2532 → 2038 | 2659 → 1989 |
+  | 1.7B, 25 | | | 2403 → 2340 | 2411 → 2261 | 2314 → 2246 |
+  | 1.7B, 77 | | | 6865 → 6538 | 7131 → 6387 | 7198 → 6325 |
+
+  On one thread nothing changes: three of the four pairs of ranges overlap, and the 135M's 56 ids take 35.11 and
+  35.09 G instructions. On more threads every pair of ranges is apart: the 135M's pass is 15% to 38% faster on 4 to
+  22 threads, the 360M's 7% to 26%, the 1.7B's 3% to 12% on 8 to 22. The process that loads the 135M and runs the 56
+  ids and one token spent 2.20 s in the kernel on 16 threads and spends 0.37 s now, with 89,740 and 20,709 voluntary
+  context switches (22 threads: 3.38 and 0.48 s, 128,303 and 22,094; one thread: 0.09 s and about 830 either way).
+- **What is left.** The small models no longer lose time past 4 threads, and they gain none: the 135M's 56 ids take
+  655, 711, 721 and 657 ms on 4, 8, 16 and 22. What runs between the products is about half of one thread's time
+  and stays on one thread, and a layer's independent products (Q, K and V; gate and up) still run one after
+  another. The first tokens after the prompt, which are no control on many threads (two entries above), came out
+  between 8.1% faster and 1.8% slower after the change on 4 threads and more, faster in 19 of the 22 cases; I did
+  not look into it.
+- Raw rows: [`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
+
+## A small parallel let, measured and reported upstream (2026-11-12)
+
+The fork that slowed the pass (the entry above) is not llama.bend's own: any small parallel let between sequential
+code pays for it. I cut it to a program of 25 lines, [`docs/upstream/fork_wake.bend`](docs/upstream/fork_wake.bend)
+(2,000 rounds of 44 µs of sequential code and then two leaves of under a microsecond, in a parallel let or one after
+the other), and reported it as [bendlang/bend#2141](https://github.com/bendlang/bend/issues/2141).
+
+- **Measured** in two idle rounds (18:42 to 19:17 and 20:40 to 20:52), Bend 2.0.40, medians of 5 runs; upstream's
+  main at `f3115277` gives the same within the ranges.
+  - On 16 threads the program takes 154 ms with its leaves in a parallel let and 92 ms with them in sequence, with
+    1.17 s of system time and 50,858 voluntary context switches against none and one. On one thread the two take
+    the same time.
+  - The system time is the worker threads' yields. Counted with an `LD_PRELOAD` shim, a parallel let is two turns
+    of the runtime's pool; each wakes every worker, and a worker with nothing to run calls `sched_yield` 128 times
+    before it sleeps again: 128 calls a let on 2 threads, 384 on 4, 1,863 on 16. With another count in the emitted C
+    the system time changes and the wall time does not.
+  - A let has a floor in wall time whatever is around it: 21 µs on 16 threads with the lets back to back, 8 µs on
+    4 threads, 3 µs on 2.
+  - The code after a let runs slower. It goes on in whichever thread took it: on 16 threads the main thread runs
+    15% of the program's own code, and 27% of it runs on efficiency cores. With 422 µs of sequential code between
+    the lets, the program is 38% slower than its sequential twin on 16 threads, and 22% slower when kept on the
+    performance cores.
+- **What it means here.** A parallel let pays when its halves are far above those costs. The products' forks are:
+  a band of the 135M's products takes about 150 µs (a diagnosis). Attention's heads over a prompt's short cache
+  are not, so the pass runs them in sequence; generation keeps them in parallel, where I could not measure the
+  difference. It also fits what the thread counts show for a token: its 211 products each pay a let's floor, which
+  grows with the threads, and the list work between them runs slower on many threads than on one. The next entry
+  measures the part of that a command can remove.
+
+## Threads on the performance cores (2026-11-12)
+
+The code after a fork goes on in whichever thread took it, so on a processor with two kinds of cores a part of a
+token's sequential work can land on the slow ones. Keeping the process on the fast ones is one command (`taskset`),
+so I measured it.
+
+- **Measured** in the second idle round (20:46 to 20:52, nobody at the machine), `e0c785d`, a 56-id prompt and 33
+  new tokens: ms a token after the first, and ms to the first token, medians of 5 alternated rounds. My machine has
+  six performance cores with two threads each (CPUs 0-11), eight efficiency cores (12-19) and two low-power ones.
+
+  | CPUs, threads | 135M: a token | first token | 360M: a token | first token |
+  |---|---|---|---|---|
+  | any, 4 | 44.4 | 648 | 91.8 | 1478 |
+  | any, 8 | 45.8 | 720 | 89.6 | 1536 |
+  | any, 12 | 53.0 | 692 | 95.7 | 1353 |
+  | any, 16 | 54.9 | 725 | 100.3 | 1492 |
+  | any, 22 | 57.9 | 673 | 109.0 | 1412 |
+  | four performance cores (`taskset -c 0,2,4,6`), 4 | 44.2 | 655 | 86.6 | 1447 |
+  | the six of them (`taskset -c 0,2,4,6,8,10`), 6 | 46.2 | 637 | 92.0 | 1425 |
+  | their twelve threads (`taskset -c 0-11`), 8 | 42.7 | 641 | 81.9 | 1429 |
+  | their twelve threads, 12 | 48.7 | 665 | 90.0 | 1436 |
+
+- **A token.** 8 threads on the performance cores' twelve are the fastest on both models: 42.7 ms against 45.8 for
+  8 threads left to the system on the 135M (the ranges apart: 42.6 to 43.0 and 45.5 to 46.4), and 81.9 against 89.6
+  on the 360M (81.6 to 82.1 and 89.0 to 90.3): 7% and 9% less, and 26% and 25% less than the 22 threads the runtime
+  takes when nothing is asked.
+- **The first token** gains less, and not everywhere: 641 against 720 ms for 8 threads on the 135M, where 4 threads
+  left to the system take 648; on the 360M, 12 threads left to the system are the fastest (1353 ms).
+- **One machine.** Which CPUs are the fast ones is the machine's (`lscpu -e` lists them), and I have not measured
+  another processor. Nothing in the program changes: each model's 45 runs give the same ids and logit bits.
+- Raw rows: [`bench/2026-11-12-performance-cores/`](bench/2026-11-12-performance-cores/).
+
+## v1.6.0 and bend-ml-llama 0.3.0.0 (2026-11-12)
+
+- **What it holds**, since v1.5.2 (the entries above, all of 2026-11-12): generation and the prompt's positions
+  without the activations on one band; the band depth by thread count and width; the three instruct checkpoints;
+  the tokenizer, the chat template and the generation loop as files of the package; the prompt in one pass; a
+  conversation that keeps its caches; the pass's heads in sequence; and the README and `BENCHMARK.md` measured again
+  on an idle machine.
+- **A minor** by bend-ml's `docs/VERSIONING.md`: a conversation, the prompt in one pass and the instruct checkpoints
+  are new capabilities.
+- **Published `bend-ml-llama@0.3.0.0`**, hash `0xf3d14d7bad8726b73c5072bce72b710c`, from `llama/package.bend`: 8 files,
+  178,694 bytes (the entry, `main.bend`, `unicode.bend`, `tok.bend`, `prompt.bend`, `gen.bend`, the `LICENSE` and the
+  README). Up to 0.2.1.1 the package was `main.bend` alone. The third number would have been enough for new API; I
+  moved the second because the package changes what it is for (from the model to a prompt's tokens) and one helper
+  of `main.bend` changed its signature (`depth_sel`; `depth_in` is new). The rest of `main.bend`'s signatures are
+  0.2.1.1's, with two changes in what they do: generation and the prompt's positions leave the activations empty on
+  any band depth, and the loader's depth follows the thread count and the model's width.
+- **Checked from a folder outside the repository**, with nothing in it but the two programs: `demo/hello.bend` with
+  its three imports pointed at `bend-ml-llama@0.3.0.0/` prints `transformers`' 128 tokens for "Once upon a time" on
+  the 135M (`reference/test_hello.py`, 0 failures); `demo/forward.bend` on the published `main.bend` with its own
+  plain-Bend loader passes `reference/test_forward.py` on the 135M (11 prompts, 0 failures, logits within 1.04e-5 of
+  `transformers`, the same argmax) and prints, byte for byte, what the repository's `forward` prints with
+  `load.bend` (7,372,549 bytes on `fwd0`'s ids). The READMEs import 0.3.0.0.
+- **The checklist** (`docs/release.md`, section 2) on `fd413a4`, whose code is the release's, Bend 2.0.40, a busy
+  machine: `make laws` (`ALL PROOFS CHECK` from bend and from `--verdict` on the package's six files, both bad
+  programs rejected with their own error); `make check` on the 135M and on the 135M-Instruct (11 tests, 0 failures
+  each; the thread probe on 1.00 and 6.95 cores); `make bits` on 22 threads and on one (23 outputs identical);
+  `test_gen.py` and `test_prompt.py` on the 360M and on the 1.7B; `test_chat_gen.py` and `test_chat_turns.py` on the
+  360M-Instruct and on the 1.7B-Instruct; the emitted C has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
+  bend-lint 0.2.2: 0 findings, 14 suppressed.

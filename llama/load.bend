@@ -126,7 +126,7 @@ def get_bands(+dir: String, +st: List<&2, U32>, +t: Nat, +d: Nat, +r: Nat, +c: N
 def get_norm(+dir: String, +st: List<&2, U32>, +t: Nat, +n: Nat) -> IO(List<&2, F32>):
   get_list(st_path(dir), st_hi(st, t), st_lo(st, t), n)
 
-# one layer's weights (tensors t_layer(i, 0..8)); d: the band depth (M.depth_for). The norms are short lists
+# one layer's weights (tensors t_layer(i, 0..8)); d: the band depth (M.depth_in). The norms are short lists
 def load_lw(+c: M.Cfg, +dir: String, +st: List<&2, U32>, +i: Nat, +d: Nat) -> IO(M.LW<c>):
   do IO<M.LW<c>>:
     ln1 : List<&2, F32> <- get_norm(dir, st, t_layer(i, 0n), M.Cfg.dim(c))
@@ -153,7 +153,7 @@ def load_layers(k: Nat, +c: M.Cfg, +dir: String, +st: List<&2, U32>, +d: Nat, +i
 def load_model(+c: M.Cfg, +dir: String) -> IO(M.Model<c>):
   do IO<M.Model<c>>:
     threads : U32 <- IO.thread_count()
-    +d : Nat = M.depth_for(threads)
+    +d : Nat = M.depth_in(c, threads)
     +st : List<&2, U32> <- read_st(dir, M.Cfg.layers(c))
     emb : TA.Bands<M.Cfg.vocab(c), M.Cfg.dim(c)> <- get_bands(dir, st, 0n, Nat.add(d, Nat.min(d, 1n)), M.Cfg.vocab(c), M.Cfg.dim(c))
     ls : List<&1, M.LW<c>> <- load_layers(M.Cfg.layers(c), c, dir, st, d, 0n, Nil{})

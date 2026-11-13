@@ -1,4 +1,4 @@
-"""SmolLM2-Instruct's chat template in Bend (demo/tok.bend's chat_ids) against transformers' apply_chat_template.
+"""SmolLM2-Instruct's chat template in Bend (llama/tok.bend's chat_ids) against transformers' apply_chat_template.
 
   reference/.venv/bin/python reference/test_chat.py <compiled tok>          the conversations below
   reference/.venv/bin/python reference/test_chat.py --hub                   models.CHAT_TEMPLATE against the Hub

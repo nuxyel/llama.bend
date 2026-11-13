@@ -20,15 +20,19 @@ and in this file's git history.
 
 ## 2. No regression
 
-1. `make laws`: the checker and `--verdict`, both `ALL PROOFS CHECK`, no `@unsafe`, no `?TODO`, both
-   `tests/bad_*.bend` rejected with their own error, `main.bend` free of foreign code.
+1. `make laws`: the checker and `--verdict` on every file of the package, each `ALL PROOFS CHECK`, no `@unsafe`, no
+   `?TODO`, both `tests/bad_*.bend` rejected with their own error, the package free of foreign code and whole in its
+   entry (`llama/package.bend`).
 2. `make check` on the 135M: prep, the tokenizer against `tokenizers`, the layer test, the forward pass and the
    twelve generations against `transformers`, 0 failures, and the thread probe (1 thread on one core, 16 on several).
 3. `make bits`: every output of the 135M identical to the saved bits. A bump or a refactor that keeps the order of
    every sum must not move a bit; if one moves, find out why before anything else, and only then `bits.py save`.
 4. `BENDRTS="--threads 1" make bits`: the same check on one thread, which runs attention's sequential order.
 5. `reference/test_gen.py .scratch/gen` with `MODEL=smollm2-360m` and with `MODEL=smollm2-1.7b`: the twelve prompts,
-   0 failures. The 1.7B takes about half an hour and 7 GB; run it alone.
+   0 failures. The 1.7B takes about half an hour and 7 GB; run it alone. Then `reference/test_chat_gen.py .scratch/gen`
+   and `reference/test_chat_turns.py .scratch/gen` with `MODEL=smollm2-135m-instruct` (a download of 270 MB; `make
+   check` runs them on the model it checks): the twelve chat turns and the three conversations of three turns, 0
+   failures.
 6. The emitted C (`bend demo/gen.bend -o gen.c`) still has `par_att`'s two joins (`..._par_att_j0` and `_j3` at
    v1.5.1 on 2.0.40; the numbers move with the code and the compiler).
 
@@ -52,8 +56,10 @@ republished only if their source changes, and llama.bend moves to a new pin only
    capability, a major only for a change in what the project is), and a GitHub release with the notes: what changed,
    what the checks reported, and whether `bend-ml-llama` changed.
 3. BendHub, only if `llama/` changed: `bend login` (GitHub), then from `llama/`:
-   `bend main.bend --publish bend-ml-llama@0.X.Y.Z` (12+ characters, four numbers, `LICENSE` next to `main.bend`, the
-   imports BendHub packages at pinned versions). Publishing is permanent; a signature change is a new version that
-   breaks callers. Then check the published package from a scratch directory: `import
-   bend-ml-llama@0.X.Y.Z/main.bend as M` and a forward pass on the 135M.
+   `bend package.bend --publish bend-ml-llama@0.X.Y.Z` (the entry, which imports every file of the package: `--publish`
+   sends it and what it imports; 12+ characters, four numbers, `LICENSE` next to it, the imports BendHub packages at
+   pinned versions). Publishing is permanent; a signature change is a new version that breaks callers. Then check the
+   published package from a scratch directory: `import bend-ml-llama@0.X.Y.Z/main.bend as M` and a forward pass on the
+   135M, and `demo/hello.bend` with its three imports pointed at `bend-ml-llama@0.X.Y.Z/`, which must print
+   `bench/expected-smollm2-135m.txt`'s tokens.
 4. Posts, if any: drafts prepared, Renan posts (X in English, LinkedIn in Portuguese).

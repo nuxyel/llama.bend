@@ -881,7 +881,7 @@ def KA.then(-R: Type, -cap: Nat, -t: Nat, ka: KA<cap, t>, then: KV<cap, t> -> Li
       then(kv, o)
 
 # attention of the (rotated) query heads at position t over the cache of positions 0..t (the newest included).
-# d is the model's parallel depth (depth_for): with d = 0 (two threads or fewer) the key/value heads run one after
+# d is the model's parallel depth (depth_in): with d = 0 (one thread) the key/value heads run one after
 # another, since a fork tree on one thread is only overhead (+5% on the 1.7B, NOTES 2026-10-12); otherwise they run
 # in parallel, one group per leaf. Both orders compute every head the same way, so the bits are the same.
 def attention(+c: Cfg, +d: Nat, -cap: Nat, +t: Nat, qs: List<&2, Head>, kv: KV<cap, 1n+t>) -> KA<cap, 1n+t>:
@@ -1038,16 +1038,20 @@ def forward_k(+keep: Bool, +c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1
 def forward(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   forward_k(True{}, c, cap, t, m, cs, room, tok)
 
-# a position for generation: the same logits, caches and model. With bands (d > 0, more than two threads) the
-# activations are left empty, about a fifth faster per token on 16 threads; with one band (d = 0) they are kept, since
-# leaving them out measured 4-11% slower per token on one thread (llama.bend NOTES, 2026-10-16), for no reason found yet
+# a position for generation: the same logits, caches and model, with the activations left empty, since generation
+# never reads them (about a fifth faster per token on 16 threads, llama.bend NOTES, 2026-10-16). One band (d = 0)
+# kept them until 2026-11-12, since leaving them out had measured 4-11% slower on one thread with Bend 2.0.37. On
+# 2.0.40 it measures from the same to 4% faster on an idle machine, and 10 to 16% faster while the desktop is
+# redrawing (NOTES, 2026-11-12)
 def forward_gen(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
     case Model{+d, emb, ls, +lnf}:
-      forward.go(Nat.is_eq(d, 0n), c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
+      forward.go(False{}, c, cap, t, room, d, ls, lnf, cs, TA.Bands.read_row(Cfg.vocab(c), Cfg.dim(c), emb, tok))
 
-# a prompt position, whose logits nobody reads: the layers and the caches as forward_gen gives them, without the final
-# norm and the product by the embedding (vocab x dim, the largest of a position), so lg and nf are empty
+# a prompt position, whose logits nobody reads: the layers and the caches as forward_gen gives them (the activations
+# empty on one band too since 2026-11-12, as there: the same on an idle machine, 5 to 12% off the time to the first
+# token while the desktop is redrawing), without the final norm and the product by the embedding (vocab x dim, the
+# largest of a position), so lg and nf are empty
 def pre_of(-c: Cfg, -cap: Nat, -t: Nat, +d: Nat, emb: TA.Bands<Cfg.vocab(c), Cfg.dim(c)>, +lnf: List<&2, F32>, r: Run<c, cap, t>) -> Out<c, cap, t>:
   match r:
     case Run{x, ls, cs, acts}:
@@ -1056,7 +1060,7 @@ def pre_of(-c: Cfg, -cap: Nat, -t: Nat, +d: Nat, emb: TA.Bands<Cfg.vocab(c), Cfg
 def forward_pre.go(+c: Cfg, -cap: Nat, +t: Nat, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +d: Nat, ls: List<&1, LW<c>>, +lnf: List<&2, F32>, cs: List<&1, KV<cap, t>>, r: TA.BRow<Cfg.vocab(c), Cfg.dim(c)>) -> Out<c, cap, t>:
   match r:
     case TA.BRow{emb, row}:
-      pre_of(c, cap, t, d, emb, lnf, layers(Nat.is_eq(d, 0n), c, d, cap, t, room, rot_at(c, t), ls, cs, row))
+      pre_of(c, cap, t, d, emb, lnf, layers(False{}, c, d, cap, t, room, rot_at(c, t), ls, cs, row))
 
 def forward_pre(+c: Cfg, -cap: Nat, +t: Nat, m: Model<c>, cs: List<&1, KV<cap, t>>, -room: {True{} == TA.leb(1n+t, cap) : Bool}, +tok: Nat) -> Out<c, cap, t>:
   match m:
@@ -1456,17 +1460,34 @@ def read_floats(path: String, +n: Nat) -> IO(List<&2, F32>):
     return List.take(&2, F32, fl, n)
 
 # the weight matrices are kept in 2^d row bands (TA.Bands); each matrix · vector product runs its bands in
-# parallel without copying the weights (bend-ml NOTES exp. 11). With 2 threads or fewer the bands cannot help,
-# so d = 0: a single band, which computes what the sequential Mat.matmul_nt computes (bend-ml exp. 14).
-def depth_sel(few: Bool) -> Nat:
-  match few:
-    case True{}:
+# parallel without copying the weights (bend-ml NOTES exp. 11). One thread gets d = 0: a single band, which
+# computes what the sequential Mat.matmul_nt computes (bend-ml exp. 14). Two threads get two bands. From three
+# threads on, a model at least 1024 wide gets 16 bands; a narrower one, whose bands are small next to a fork, gets
+# 4 bands on four threads, 8 on three and on five to eight, and 16 beyond. Until 2026-11-12 it was one band up to
+# two threads and 16 above, so two threads ran on one core (NOTES, 2026-11-12). The bits are the same at every depth.
+# depth_sel: whether the thread count is at most 1, at most 2, 4, and at most 8, and whether the model is wide
+def depth_sel(le1: Bool, le2: Bool, wide: Bool, is4: Bool, le8: Bool) -> Nat:
+  match le1 le2 wide is4 le8:
+    case True{} _ _ _ _:
       0n
-    case False{}:
+    case False{} True{} _ _ _:
+      1n
+    case False{} False{} True{} _ _:
+      4n
+    case False{} False{} False{} True{} _:
+      2n
+    case False{} False{} False{} False{} True{}:
+      3n
+    case False{} False{} False{} False{} False{}:
       4n
 
+# the depth for a model narrower than 1024
 def depth_for(+threads: U32) -> Nat:
-  depth_sel(U32.is_le(threads, 2))
+  depth_sel(U32.is_le(threads, 1), U32.is_le(threads, 2), False{}, U32.is_eq(threads, 4), U32.is_le(threads, 8))
+
+# the depth for the model of c
+def depth_in(+c: Cfg, +threads: U32) -> Nat:
+  depth_sel(U32.is_le(threads, 1), U32.is_le(threads, 2), Nat.is_lt(1023n, Cfg.dim(c)), U32.is_eq(threads, 4), U32.is_le(threads, 8))
 
 # ---- BF16 tensors: matrices kept in bands, each band read from its own range of the file ----
 
@@ -1663,7 +1684,7 @@ def get_norm(+dir: String, +st: List<&2, U32>, +t: Nat, +n: Nat) -> IO(List<&2, 
     bs : List<&2, U32> <- rb_done(m)
     return List.take(&2, F32, bf16s(bs), n)
 
-# one layer's weights (tensors t_layer(i, 0..8)) from w/st.txt's numbers st; d: the band depth (depth_for)
+# one layer's weights (tensors t_layer(i, 0..8)) from w/st.txt's numbers st; d: the band depth (depth_in)
 def load_lw_st(+c: Cfg, +dir: String, +st: List<&2, U32>, +i: Nat, +d: Nat) -> IO(LW<c>):
   do IO<LW<c>>:
     ln1 : List<&2, F32> <- get_norm(dir, st, t_layer(i, 0n), Cfg.dim(c))
@@ -1677,7 +1698,7 @@ def load_lw_st(+c: Cfg, +dir: String, +st: List<&2, U32>, +i: Nat, +d: Nat) -> I
     down : TA.Bands<Cfg.dim(c), Cfg.ffn(c)> <- get_bands(dir, st, t_layer(i, 8n), d, Cfg.dim(c), Cfg.ffn(c))
     return LW{ln1, q, k, v, o, ln2, gate, up, down}
 
-# layer i's weights alone (layer_test); d: the band depth (depth_for)
+# layer i's weights alone (layer_test); d: the band depth (depth_in)
 def load_lw(+c: Cfg, +dir: String, +i: Nat, +d: Nat) -> IO(LW<c>):
   do IO<LW<c>>:
     +st : List<&2, U32> <- read_st(dir, Cfg.layers(c))
@@ -1696,7 +1717,7 @@ def load_layers(k: Nat, +c: Cfg, +dir: String, +st: List<&2, U32>, +d: Nat, +i: 
 def load_model(+c: Cfg, +dir: String) -> IO(Model<c>):
   do IO<Model<c>>:
     threads : U32 <- IO.thread_count()
-    +d : Nat = depth_for(threads)
+    +d : Nat = depth_in(c, threads)
     +st : List<&2, U32> <- read_st(dir, Cfg.layers(c))
     emb : TA.Bands<Cfg.vocab(c), Cfg.dim(c)> <- get_bands(dir, st, 0n, Nat.add(d, Nat.min(d, 1n)), Cfg.vocab(c), Cfg.dim(c))
     ls : List<&1, LW<c>> <- load_layers(Cfg.layers(c), c, dir, st, d, 0n, Nil{})
