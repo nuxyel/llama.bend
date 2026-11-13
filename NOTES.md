@@ -1896,3 +1896,32 @@ above). The products were not the reason.
   between 8.1% faster and 1.8% slower after the change on 4 threads and more, faster in 19 of the 22 cases; I did
   not look into it.
 - Raw rows: [`bench/2026-11-12-prompt-threads/`](bench/2026-11-12-prompt-threads/).
+
+## A small parallel let, measured and reported upstream (2026-11-12)
+
+The fork that slowed the pass (the entry above) is not llama.bend's own: any small parallel let between sequential
+code pays for it. I cut it to a program of 25 lines, [`docs/upstream/fork_wake.bend`](docs/upstream/fork_wake.bend)
+(2,000 rounds of 44 µs of sequential code and then two leaves of under a microsecond, in a parallel let or one after
+the other), and reported it as [bendlang/bend#2141](https://github.com/bendlang/bend/issues/2141).
+
+- **Measured** in two idle rounds (18:42 to 19:17 and 20:40 to 20:52), Bend 2.0.40, medians of 5 runs; upstream's
+  main at `f3115277` gives the same within the ranges.
+  - On 16 threads the program takes 154 ms with its leaves in a parallel let and 92 ms with them in sequence, with
+    1.17 s of system time and 50,858 voluntary context switches against none and one. On one thread the two take
+    the same time.
+  - The system time is the worker threads' yields. Counted with an `LD_PRELOAD` shim, a parallel let is two turns
+    of the runtime's pool; each wakes every worker, and a worker with nothing to run calls `sched_yield` 128 times
+    before it sleeps again: 128 calls a let on 2 threads, 384 on 4, 1,863 on 16. With another count in the emitted C
+    the system time changes and the wall time does not.
+  - A let has a floor in wall time whatever is around it: 21 µs on 16 threads with the lets back to back, 8 µs on
+    4 threads, 3 µs on 2.
+  - The code after a let runs slower. It goes on in whichever thread took it: on 16 threads the main thread runs
+    15% of the program's own code, and 27% of it runs on efficiency cores. With 422 µs of sequential code between
+    the lets, the program is 38% slower than its sequential twin on 16 threads, and 22% slower when kept on the
+    performance cores.
+- **What it means here.** A parallel let pays when its halves are far above those costs. The products' forks are:
+  a band of the 135M's products takes about 150 µs (a diagnosis). Attention's heads over a prompt's short cache
+  are not, so the pass runs them in sequence; generation keeps them in parallel, where I could not measure the
+  difference. It also fits what the thread counts show for a token: its 211 products each pay a let's floor, which
+  grows with the threads, and the list work between them runs slower on many threads than on one. The next entry
+  measures the part of that a command can remove.
