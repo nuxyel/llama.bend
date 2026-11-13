@@ -79,6 +79,13 @@ it the two small models are 9 and 10% faster on 4 threads and 7 and 2% faster on
 [`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in [`bench/2026-11-12-band-depth/`](bench/2026-11-12-band-depth/).
 I did not measure the other systems on these counts.
 
+Where the threads run matters too on this processor. In another idle round that day (20:46 to 20:52, `e0c785d`, a
+56-token prompt and 33 new tokens, 5 alternated rounds), 8 threads kept on the performance cores' twelve
+(`taskset -c 0-11`) took 42.7 ms per token on the 135M and 81.9 on the 360M, against 45.8 and 89.6 for 8 threads
+left to the system and 57.9 and 109 for the 22 the runtime takes by default. The rest is in
+[`NOTES.md`](NOTES.md) (2026-11-12), with the raw rows in
+[`bench/2026-11-12-performance-cores/`](bench/2026-11-12-performance-cores/).
+
 ## The prompt: time to the first token
 
 The tables above leave the prompt out. Since `4770462` a prompt runs through each layer in one pass
