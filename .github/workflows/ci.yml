@@ -56,3 +56,39 @@ jobs:
         with:
           name: check-log
           path: check.log
+
+  no-python:
+    name: make bench without Python (scripts/fetch.sh, SmolLM2-135M)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # the gate is that nothing here needs Python: python and python3 fail, and say so, if anything calls them
+      - name: Hide Python
+        run: |
+          mkdir -p "$RUNNER_TEMP/nopy"
+          for p in python python3; do
+            printf '#!/bin/sh\necho "%s called: this job must not need Python" >&2\nexit 99\n' "$p" > "$RUNNER_TEMP/nopy/$p"
+            chmod +x "$RUNNER_TEMP/nopy/$p"
+          done
+          echo "$RUNNER_TEMP/nopy" >> "$GITHUB_PATH"
+
+      - name: Cache Bend
+        uses: actions/cache@v6
+        with:
+          path: ~/.bend
+          key: bend-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
+
+      - name: Cache the SmolLM2-135M download
+        uses: actions/cache@v6
+        with:
+          path: data/smollm2-135m/hf
+          key: hf-smollm2-135m-fetch-${{ hashFiles('scripts/fetch.sh') }}
+
+      - name: Set up Bend alone, fetch SmolLM2-135M, make bench
+        run: |
+          ! python3 -c 1 2>/dev/null
+          make setup-bend fetch
+          make bench | tee bench.log
+          grep -q " ok$" bench.log
