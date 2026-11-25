@@ -9,10 +9,16 @@ PY := reference/.venv/bin/python
 # gpu.bend (an unsafe primitive of Base) stay outside
 PKG := llama/main.bend llama/unicode.bend llama/tok.bend llama/prompt.bend llama/gen.bend llama/package.bend
 
-.PHONY: setup prep laws check bits bench bench-gpu media lint
+.PHONY: setup setup-bend fetch prep laws check bits bench bench-gpu media lint
 
 setup:            ## install the pinned Bend and Lean if missing, create the Python venv
 	scripts/setup.sh
+
+setup-bend:       ## Bend alone, no Lean and no Python: enough for `make fetch` and `make bench`
+	scripts/setup.sh --bend-only
+
+fetch:            ## MODEL without Python: prepared/'s small files and model.safetensors at the pinned revision, SHA256 checked (135M: 270 MB down)
+	scripts/fetch.sh
 
 prep:             ## download MODEL (pinned revision) and write data/MODEL/ (135M: 270 MB down, under 1 MB written); F32=1: also the F32 copies that bend-ml-llama 0.2.0.0 reads (135M: 540 MB, 1.7B: 6.4 GB)
 	$(PY) reference/prep.py
@@ -27,8 +33,10 @@ laws:             ## every file of the package checked by bend and again by the 
 	for f in $(PKG); do echo "== $$f"; bend $$f && bend $$f --verdict | tee /dev/stderr | tail -1 | grep -qx "ALL PROOFS CHECK" || exit 1; done
 	scripts/check_rejected.sh
 
-check: laws       ## the laws, prep, the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; conversations of three turns, their caches kept, against transformers generating each turn from the whole conversation; the prompt in one pass against position by position; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
+check: laws       ## the laws, prep (and prepared/ against it), the Bend tokenizer and chat template against `tokenizers`/`transformers`; one layer, the forward and generation against transformers; conversations of three turns, their caches kept, against transformers generating each turn from the whole conversation; the prompt in one pass against position by position; sampling against its Python twin; demo/hello.bend, built from a copy of the package's files alone, against transformers' tokens
 	$(PY) reference/prep.py --check
+	cmp prepared/$(MODEL)/cfg.txt $(DIR)/cfg.txt && cmp prepared/$(MODEL)/st.txt $(DIR)/w/st.txt
+	cmp prepared/tokenizer/merges_num.txt $(DIR)/merges_num.txt && cmp prepared/tokenizer/perm.txt $(DIR)/perm.txt
 	mkdir -p .scratch
 	bend demo/tok.bend -o .scratch/tok
 	$(PY) reference/test_tok.py .scratch/tok
