@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-shot, idempotent setup for the llama.bend checks. No sudo.
 #
-#   scripts/setup.sh      # Bend 2.0.40, Lean 4.34.0, the Python venv of reference/
+#   scripts/setup.sh              # Bend 2.0.40, Lean 4.34.0, the Python venv of reference/
+#   scripts/setup.sh --bend-only  # Bend alone: enough for scripts/fetch.sh, the demos and `make bench`
 #
 # Pins: Bend 2.0.40 (checked by SHA256) and Lean v4.34.0 (the kernel behind `bend --verdict`). The same steps as
 # bend-ml's scripts/setup.sh (MIT). The model is downloaded afterwards by `make prep`.
@@ -9,6 +10,9 @@ set -euo pipefail
 
 BEND_VERSION=2.0.40
 LEAN_VERSION=4.34.0
+
+BEND_ONLY=0
+[ "${1:-}" = --bend-only ] && BEND_ONLY=1
 
 cd "$(dirname "$0")/.."
 export BEND_NO_TELEMETRY=1
@@ -42,6 +46,11 @@ else
 fi
 have_bend || { echo "ERROR: bend $BEND_VERSION not found after install"; exit 1; }
 bend version
+
+if [ "$BEND_ONLY" = 1 ]; then
+  say "setup finished: run 'make fetch' (downloads SmolLM2-135M), then 'make bench'"
+  exit 0
+fi
 
 # --- 2. Lean (kernel for --verdict) -----------------------------------------------------
 say "Lean $LEAN_VERSION"
