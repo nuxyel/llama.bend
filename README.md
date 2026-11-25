@@ -141,19 +141,28 @@ parameter) ran the same commit at the same speed: no def here had the shape that
 
 ## 05 · Reproduce
 
-Linux x86_64 (or WSL), clang, Python 3.14 (the version the pinned dependencies were tested with), `curl`. About 1.6 GB
-of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.4 GB for the model's files and the test data.
+Linux x86_64 (or WSL), clang, `curl`. To run the models, Bend is all it takes: 270 MB of disk for the 135M.
 
 ```bash
 git clone https://github.com/nuxyel/llama.bend.git && cd llama.bend
+make setup-bend   # Bend 2.0.40 alone (SHA256-checked); no sudo, no Python
+make fetch        # SmolLM2-135M's weights at a pinned revision (SHA256-checked) and the small files in prepared/
+bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
+./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
+make fetch MODEL=smollm2-135m-instruct   # the instruct checkpoint (270 MB)
+./gen data/smollm2-135m-instruct --chat "What is the capital of France?" 32   # one user turn: "The capital of France is Paris."
+./gen data/smollm2-135m-instruct --chat - 64   # a conversation: type a turn after "> ", read the answer as it is written; Ctrl-D ends it
+make bench        # ms per token, and whether the 128 tokens are transformers' own
+```
+
+To check everything against `tokenizers` and `transformers`, the tests need Python 3.14 (the version the pinned
+dependencies were tested with) and about 1.6 GB of disk for the 135M: 1.2 GB for the Python venv with PyTorch, 0.4 GB
+for the model's files and the test data.
+
+```bash
 make setup   # Bend 2.0.40 (SHA256-checked), Lean 4.34.0, the Python venv of reference/; no sudo
 make prep    # SmolLM2-135M at a pinned revision into data/smollm2-135m/, checked
 make check   # the laws (--verdict), the rejected programs, then every test above against tokenizers and transformers (~4 min)
-bend demo/gen.bend -o gen && ./gen data/smollm2-135m "The capital of France is" 32
-./gen data/smollm2-135m "Once upon a time" 32 0.8 50 0.95 42   # sampled: temperature, top-k, top-p, seed
-make prep MODEL=smollm2-135m-instruct   # the instruct checkpoint (270 MB)
-./gen data/smollm2-135m-instruct --chat "What is the capital of France?" 32   # one user turn: "The capital of France is Paris."
-./gen data/smollm2-135m-instruct --chat - 64   # a conversation: type a turn after "> ", read the answer as it is written; Ctrl-D ends it
 ```
 
 Greedy is the default and `temperature 0` is greedy too. A seed gives the same tokens on every run, on one thread as
