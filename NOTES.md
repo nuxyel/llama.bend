@@ -1987,3 +1987,20 @@ so I measured it.
   `test_gen.py` and `test_prompt.py` on the 360M and on the 1.7B; `test_chat_gen.py` and `test_chat_turns.py` on the
   360M-Instruct and on the 1.7B-Instruct; the emitted C has `par_att`'s two joins (`..._par_att_j0` and `_j3`).
   bend-lint 0.2.2: 0 findings, 14 suppressed.
+
+## 2026-11-25: running without Python (L7, first step)
+
+- **What.** `prepared/` holds the files `reference/prep.py` writes that the Bend programs read besides the weights:
+  the tokenizer tables `merges_num.txt` and `perm.txt` (443 KB and 1 KB, the same for the six models, which share one
+  `tokenizer.json`) and, per model, `cfg.txt` and `w/st.txt` (3 KB). `ids.txt` stays out: only the Python tests read
+  it. They carry SmolLM2's Apache-2.0 licence. `scripts/fetch.sh` (`make fetch`) copies them into `data/<MODEL>/` and
+  downloads `model.safetensors` at the revision `reference/models.py` pins, checked by the SHA256 the Hub lists for it
+  at that revision (the six checked against the Hub's API on 2026-11-25, and against the local downloads).
+  `scripts/setup.sh --bend-only` (`make setup-bend`) installs Bend alone. Running a model now takes Bend and 270 MB for
+  the 135M, against 1.6 GB with the venv.
+- **Gates.** `make check` compares the four files with what `prep.py` writes for the model it checks, so `prepared/`
+  cannot drift. A CI job, `no-python`, puts a `python` and a `python3` that fail on the PATH, then runs `make setup-bend
+  fetch bench` to "ok". Locally, in a copy of the tree with no venv: `make bench` gives the 128 tokens of
+  transformers (`ok`), and `--chat` on the 135M-Instruct answers "The capital of France is Paris."
+- **Left (second step).** The preparation itself in Bend: `config.json`, `tokenizer.json` and the safetensors header
+  are JSON, so a JSON reader first (one on BendHub if there is one, else a package of ours), then the question upstream.
